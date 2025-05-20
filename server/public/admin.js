@@ -16,6 +16,7 @@ const urlInput = document.getElementById('url');
 const apiKeyInput = document.getElementById('api_key');
 const saveBtn = document.getElementById('save-btn');
 const cancelBtn = document.getElementById('cancel-btn');
+const typeInput = document.getElementById('type');
 
 // 导入/导出功能
 const importBtn = document.getElementById('import-btn');
@@ -67,13 +68,14 @@ window.editModel = function(id) {
     modelNameInput.value = m.name || '';
     urlInput.value = m.apiUrl || '';
     apiKeyInput.value = m.apikey || '';
+    typeInput.value = m.type || '';
     formTitle.textContent = '编辑模型';
     cancelBtn.style.display = '';
 };
 
 window.deleteModel = async function(id) {
     if (!confirm('确定要删除该模型吗？')) return;
-    await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+    await fetch(`${API_BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' });
     await fetchModels();
     renderTable();
 };
@@ -83,7 +85,8 @@ form.onsubmit = async function(e) {
     const data = {
         name: modelNameInput.value.trim(),
         apiUrl: urlInput.value.trim(),
-        apikey: apiKeyInput.value.trim()
+        apikey: apiKeyInput.value.trim(),
+        type: typeInput.value.trim()
     };
     if (!editingId) {
         // 新增
@@ -94,7 +97,7 @@ form.onsubmit = async function(e) {
         });
     } else {
         // 编辑
-        await fetch(`${API_BASE}/${editingId}`, {
+        await fetch(`${API_BASE}/${encodeURIComponent(editingId)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -106,6 +109,7 @@ form.onsubmit = async function(e) {
     editingId = null;
     formTitle.textContent = '添加新模型';
     cancelBtn.style.display = 'none';
+    typeInput.value = '';
 };
 
 cancelBtn.onclick = function() {
@@ -113,6 +117,7 @@ cancelBtn.onclick = function() {
     editingId = null;
     formTitle.textContent = '添加新模型';
     cancelBtn.style.display = 'none';
+    typeInput.value = '';
 };
 
 importBtn.onclick = function() {

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = 3000;
@@ -95,6 +96,32 @@ app.post('/api/models/import', (req, res) => {
 app.get('/api/models/export', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.download(MODELS_FILE, 'models.json');
+});
+
+// OpenRouter代理接口
+app.post('/api/relay', async (req, res) => {
+    // 动态读取当前激活模型
+    const data = readModels();
+    const active = data.models.find(m => m.isActive);
+    if (!active) {
+        return res.status(400).json({ error: '未配置激活模型' });
+    }
+    const apiUrl = active.apiUrl;
+    const apiKey = active.apikey;
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.text();
+        res.status(response.status).send(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.listen(PORT, () => {
