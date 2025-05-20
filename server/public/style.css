@@ -1,0 +1,167 @@
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background-color: #0B192F; /* 深蓝色背景 */
+    color: #E0E0E0; /* 浅色文字 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh; /* 使用min-height确保内容溢出时页面可滚动 */
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    /* height: 100%; */ /* 移除，由下面的height/max-height控制 */
+    /* max-width: 100%; */ /* 移除，由下面的width/max-width控制 */
+    /* margin: 0 auto; */ /* 移除，body负责居中 */
+    width: 85vw; /* 容器宽度为视口宽度的65% */
+    max-width: 1240px; /* 最大宽度 */
+    height: 80vh; /* 容器高度为视口高度的80% */
+    max-height: 700px; /* 最大高度 */
+    background-color: #0F203A; /* 设置容器背景色，之前chat-area的颜色 */
+    border-radius: 12px; /* 为容器添加圆角 */
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35); /* 添加一些阴影以增加层次感 */
+    overflow: hidden; /* 确保子元素的边角不会超出容器的圆角 */
+}
+
+header {
+    width: 85vw;
+    max-width: 1240px;
+    text-align: center;
+    background: none;
+    margin-top: 40px;
+    margin-bottom: 30px;
+    padding: 0;
+}
+
+header h1 {
+    font-size: 2.5em;
+    color: #FFFFFF;
+    margin-bottom: 5px;
+}
+
+header p {
+    font-size: 1.1em;
+    color: #A0A0A0;
+    margin-top: 0;
+}
+
+.chat-area {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 20px;
+    background-color: #0F203A; /* 与container背景色一致 */
+    display: flex;
+    flex-direction: column;
+}
+
+footer {
+    padding: 15px 20px;
+    background-color: transparent; /* 背景透明，显示父容器颜色 */
+    border-top: 1px solid #1A2B47; 
+}
+
+.input-area {
+    display: flex;
+    align-items: center;
+    background-color: #1E293B; /* 输入区域背景色 */
+    border-radius: 8px;
+    padding: 5px 10px;
+}
+
+.input-area input[type="text"] {
+    flex-grow: 1;
+    padding: 12px;
+    border: none;
+    background-color: transparent; /* 输入框透明背景 */
+    color: #E0E0E0;
+    font-size: 1em;
+    outline: none; /* 去除选中时的外框 */
+}
+
+.input-area input[type="text"]::placeholder {
+    color: #708090; /* 占位符颜色 */
+}
+
+.input-area button {
+    background-color: transparent; /* 按钮透明背景 */
+    border: none;
+    color: #A0B3D1; /* 图标和文字颜色 */
+    padding: 10px;
+    cursor: pointer;
+    margin-left: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.input-area button.send-button {
+    background-color: #007BFF; /* 发送按钮蓝色背景 */
+    color: #FFFFFF; /* 发送按钮白色文字 */
+    border-radius: 6px;
+    padding: 10px 20px; /* 发送按钮内边距 */
+    font-size: 1em;
+}
+
+.input-area button.send-button:hover {
+    background-color: #0056b3;
+}
+
+.input-area button.mic-button svg {
+    width: 22px; /* 图标大小 */
+    height: 22px;
+}
+
+/* 如果需要滚动条样式，可以添加 */
+.chat-area::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-area::-webkit-scrollbar-track {
+    background: #0F203A;
+}
+
+.chat-area::-webkit-scrollbar-thumb {
+    background: #1A2B47;
+    border-radius: 4px;
+}
+
+.chat-area::-webkit-scrollbar-thumb:hover {
+    background: #2A3F5E;
+}
+
+/* 聊天消息样式 */
+.message {
+    margin-bottom: 15px;
+    padding: 10px 15px;
+    border-radius: 18px;
+    max-width: 70%;
+    line-height: 1.4;
+}
+
+.message p {
+    margin: 0;
+}
+
+.user-message {
+    background-color: #007BFF; /* 用户消息蓝色背景 */
+    color: #FFFFFF; /* 用户消息白色文字 */
+    align-self: flex-end;
+    margin-left: auto; /* 消息靠右 */
+    border-bottom-right-radius: 5px; /* 调整圆角使其像聊天气泡 */
+}
+
+.ai-message {
+    background-color: #343A40; /* AI消息深灰色背景 */
+    color: #E0E0E0; /* AI消息浅色文字 */
+    align-self: flex-start;
+    margin-right: auto; /* 消息靠左 */
+    border-bottom-left-radius: 5px; /* 调整圆角使其像聊天气泡 */
+}
+
+.ai-thinking p{
+    color: #888;
+    font-style: italic;
+} 

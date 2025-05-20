@@ -1,0 +1,11 @@
+{
+  "models": [
+    {
+      "name": "deepseek/deepseek-r1:free",
+      "apiUrl": "https://openrouter.ai/api/v1",
+      "apikey": "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",
+      "id": "deepseek/deepseek-r1:free_1747730537653",
+      "isActive": true
+    }
+  ]
+}

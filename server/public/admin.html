@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大模型管理后台</title>
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h2>大模型配置管理</h2>
+        <div style="text-align:center;margin-bottom:16px;">
+            <button id="import-btn">导入配置</button>
+            <button id="export-btn">导出配置</button>
+            <input type="file" id="import-file" accept=".json" style="display:none;">
+        </div>
+        <div id="model-list-section">
+            <h3>已配置模型</h3>
+            <table id="model-table">
+                <thead>
+                    <tr>
+                        <th>模型名称</th>
+                        <th>URL</th>
+                        <th>API Key</th>
+                        <th>当前使用</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="model-table-body">
+                    <!-- 动态填充 -->
+                </tbody>
+            </table>
+        </div>
+        <div id="model-form-section">
+            <h3 id="form-title">添加新模型</h3>
+            <form id="model-form">
+                <input type="hidden" id="edit-index">
+                <label>模型名称：<input type="text" id="model_name" required></label><br>
+                <label>URL：<input type="text" id="url" required></label><br>
+                <label>API Key：<input type="text" id="api_key" required></label><br>
+                <button type="submit" id="save-btn">保存</button>
+                <button type="button" id="cancel-btn" style="display:none;">取消</button>
+            </form>
+        </div>
+    </div>
+    <script src="admin.js"></script>
+</body>
+</html> 
