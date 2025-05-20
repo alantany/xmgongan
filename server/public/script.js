@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger file input click when upload button is clicked
     uploadFileButton.addEventListener('click', () => {
+        fileUploadInput.accept = ".txt,.pdf,.doc,.docx,.xls,.xlsx,.jpeg,.jpg,.png,.csv"; // Add .csv
         fileUploadInput.click();
     });
 
@@ -217,12 +218,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             'application/msword', // .doc
                             'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
                             'application/vnd.ms-excel', // .xls
-                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' // .xlsx
+                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+                            'text/csv' // .csv
                         ].includes(file.type)) {
                             reader.readAsDataURL(file); // Base64 for these document types
                         } else {
-                            console.warn(`Unsupported file type: ${file.name} (${file.type}). Skipping.`);
-                            resolve({ name: file.name, type: file.type, content: null, error: 'Unsupported file type' });
+                            console.warn(`Unsupported file type: ${file.name} (${file.type}). Trying to read as Base64 for backend processing.`);
+                            // Fallback for unknown types, potentially including CSV if MIME type isn't 'text/csv'
+                            // The backend will have the final say on processing based on filename/content.
+                            reader.readAsDataURL(file);
                         }
                     });
                 });

@@ -147,16 +147,26 @@ app.post('/api/relay', async (req, res) => {
                 let fileTypeForLog = 'Unknown';
 
                 try {
-                    if (attachment.mime_type === 'application/pdf') {
+                    console.log(`Processing attachment: Original Filename: '${attachment.filename}', Original MimeType: '${attachment.mime_type}'`);
+                    const mimeType = attachment.mime_type ? attachment.mime_type.trim() : '';
+                    const fileName = attachment.filename ? attachment.filename.trim().toLowerCase() : '';
+                    console.log(`Sanitized values - fileName: '${fileName}', mimeType: '${mimeType}'`);
+                    console.log(`CSV Check part 1 (mimeType === 'text/csv'): ${mimeType === 'text/csv'}`);
+                    console.log(`CSV Check part 2 (fileName.endsWith('.csv')): ${fileName.endsWith('.csv')}`);
+
+                    if (mimeType === 'application/pdf' || fileName.endsWith('.pdf')) {
                         fileTypeForLog = 'PDF';
                         const pdfData = await pdf(buffer);
                         extractedText = pdfData.text;
-                    } else if (attachment.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || attachment.filename.endsWith('.docx')) {
+                    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || fileName.endsWith('.docx')) {
                         fileTypeForLog = 'DOCX';
                         const mammothResult = await mammoth.extractRawText({ buffer });
                         extractedText = mammothResult.value;
-                    } else if (attachment.mime_type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || attachment.filename.endsWith('.xlsx') || 
-                               attachment.mime_type === 'application/vnd.ms-excel' || attachment.filename.endsWith('.xls')) {
+                    } else if (mimeType === 'text/csv' || fileName.endsWith('.csv')) {
+                        fileTypeForLog = 'CSV';
+                        extractedText = buffer.toString('utf-8');
+                    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || fileName.endsWith('.xlsx') ||
+                               mimeType === 'application/vnd.ms-excel' || fileName.endsWith('.xls')) {
                         fileTypeForLog = 'Excel';
                         const workbook = xlsx.read(buffer, { type: 'buffer' });
                         let excelContent = [];
@@ -169,7 +179,7 @@ app.post('/api/relay', async (req, res) => {
                             });
                         });
                         extractedText = excelContent.join('\\n');
-                    } else if (attachment.mime_type.startsWith('image/')) {
+                    } else if (mimeType.startsWith('image/')) {
                         fileTypeForLog = 'Image (OCR)';
                         // Re-enable OCR with tesseract.js v5.0.5
                         
