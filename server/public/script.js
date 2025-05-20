@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedFilesContainer = document.getElementById('selected-files-container');
 
     let selectedFiles = []; // Store selected files
+    let isFileListExpanded = false; // Track if the full file list is shown
+    const maxInitialFilesToShow = 2;
 
     // Trigger file input click when upload button is clicked
     uploadFileButton.addEventListener('click', () => {
@@ -20,27 +22,53 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle file selection
     fileUploadInput.addEventListener('change', (event) => {
         selectedFiles = Array.from(event.target.files);
+        isFileListExpanded = false; // Reset expanded state on new selection
         renderSelectedFiles();
         fileUploadInput.value = ''; // Reset file input to allow re-selecting the same file
     });
 
     function renderSelectedFiles() {
         selectedFilesContainer.innerHTML = '';
-        if (selectedFiles.length > 0) {
-            const list = document.createElement('ul');
-            selectedFiles.forEach(file => {
-                const listItem = document.createElement('li');
-                listItem.textContent = `${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
-                const removeBtn = document.createElement('button');
-                removeBtn.textContent = 'x';
-                removeBtn.onclick = () => {
-                    selectedFiles = selectedFiles.filter(f => f !== file);
-                    renderSelectedFiles();
-                };
-                listItem.appendChild(removeBtn);
-                list.appendChild(listItem);
-            });
-            selectedFilesContainer.appendChild(list);
+        if (selectedFiles.length === 0) {
+            isFileListExpanded = false; // Ensure state is reset if no files
+            return;
+        }
+
+        const list = document.createElement('ul');
+        const filesToRender = isFileListExpanded ? selectedFiles : selectedFiles.slice(0, maxInitialFilesToShow);
+
+        filesToRender.forEach(file => {
+            const listItem = document.createElement('li');
+            listItem.textContent = `${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = 'x';
+            removeBtn.onclick = () => {
+                selectedFiles = selectedFiles.filter(f => f !== file);
+                // If the list was expanded and now has fewer files than maxInitial, 
+                // or if it becomes empty, reset expansion or re-render correctly.
+                if (selectedFiles.length <= maxInitialFilesToShow) {
+                    isFileListExpanded = false;
+                }
+                renderSelectedFiles();
+            };
+            listItem.appendChild(removeBtn);
+            list.appendChild(listItem);
+        });
+        selectedFilesContainer.appendChild(list);
+
+        if (selectedFiles.length > maxInitialFilesToShow) {
+            const toggleBtn = document.createElement('button');
+            toggleBtn.classList.add('toggle-file-list-btn'); // Add class for styling
+            if (isFileListExpanded) {
+                toggleBtn.textContent = '收起';
+            } else {
+                toggleBtn.textContent = `还有 ${selectedFiles.length - maxInitialFilesToShow} 个文件... (点击展开)`;
+            }
+            toggleBtn.onclick = () => {
+                isFileListExpanded = !isFileListExpanded;
+                renderSelectedFiles();
+            };
+            selectedFilesContainer.appendChild(toggleBtn);
         }
     }
 
@@ -187,7 +215,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!pf.content) continue;
 
                     if (pf.type.startsWith('image/')) {
-                        userMessageContentParts.push({ type: 'image_url', image_url: { url: pf.content } });
+                        fileAttachmentsForRequestBody.push({
+                            filename: pf.name,
+                            mime_type: pf.type,
+                            data: pf.content.split(',')[1] // Base64 data
+                        });
+                        const imagePlaceholder = `[用户上传了图片: ${pf.name} - 将由后端OCR处理]`;
+                        if (userMessageContentParts.find(p => p.type === 'text')) {
+                            userMessageContentParts.find(p => p.type === 'text').text += `\\n${imagePlaceholder}`;
+                        } else {
+                            userMessageContentParts.unshift({ type: 'text', text: imagePlaceholder });
+                        }
                     } else if (pf.type === 'text/plain') {
                         textFileCombinedContent += `--- BEGIN FILE: ${pf.name} ---\n${pf.content}\n--- END FILE: ${pf.name} ---\n\n`;
                     } else { // PDF, DOCX, XLSX etc. as Base64
