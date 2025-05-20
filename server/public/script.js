@@ -94,55 +94,77 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to append messages to the chat area
     function appendMessage(text, sender, messageId) {
         let messageElement = messageId ? document.getElementById(messageId) : null;
-        let textNode;
+        let textNodeP;
+        let iconContainer;
 
-        if (messageElement) {
-            // Update existing message element (for streaming)
-            textNode = messageElement.querySelector('p');
-            if (!textNode) { // Should not happen if structured correctly
-                textNode = document.createElement('p');
-                messageElement.appendChild(textNode);
+        const userSvgIcon = `<svg viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px; margin-right: 8px;"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path></svg>`;
+        const aiSvgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 24px; height: 24px; margin-right: 8px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><path d="M12 17.5c2.07 0 3.75-1.68 3.75-3.75S14.07 10 12 10s-3.75 1.68-3.75 3.75S9.93 17.5 12 17.5zm0-6c.96 0 1.75.79 1.75 1.75S12.96 15 12 15s-1.75-.79-1.75-1.75S11.04 11.5 12 11.5z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/></svg>`;
+
+        if (messageElement) { // Updating an existing message
+            iconContainer = messageElement.querySelector('.message-icon'); // Icon should already exist
+            textNodeP = messageElement.querySelector('p');
+            
+            // If for some reason p tag is missing (should not happen with correct initial creation)
+            if (!textNodeP) {
+                textNodeP = document.createElement('p');
+                if (iconContainer && iconContainer.nextSibling) {
+                    messageElement.insertBefore(textNodeP, iconContainer.nextSibling);
+                } else if (iconContainer) {
+                    messageElement.appendChild(textNodeP);
+                } else { // Should not happen if icon is always there for AI messages
+                    messageElement.appendChild(textNodeP);
+                }
             }
-        } else {
-            // Create new message element
-            messageId = sender + '-' + Date.now(); // Generate a unique ID for new messages
+        } else { // Creating a new message
+            messageId = sender + '-' + Date.now();
             messageElement = document.createElement('div');
             messageElement.id = messageId;
             messageElement.classList.add('message', `${sender}-message`);
-            textNode = document.createElement('p');
-            messageElement.appendChild(textNode);
+
+            iconContainer = document.createElement('span');
+            iconContainer.classList.add('message-icon');
+            iconContainer.innerHTML = sender === 'user' ? userSvgIcon : aiSvgIcon;
+            messageElement.appendChild(iconContainer);
+
+            textNodeP = document.createElement('p');
+            messageElement.appendChild(textNodeP);
             
             if (chatArea) {
                 chatArea.appendChild(messageElement);
             } else {
                 console.error("Chat area not found for new message!");
-                return null; // Cannot append
+                return null;
             }
         }
 
+        // Update text content
         if (sender === 'ai' && typeof marked !== 'undefined') {
-            // Ensure text is a string before parsing. Default to empty string if null/undefined.
             const markdownInput = (text === null || typeof text === 'undefined') ? '' : String(text);
-            textNode.innerHTML = marked.parse(markdownInput);
+            textNodeP.innerHTML = marked.parse(markdownInput); // Render Markdown for AI
         } else {
-            textNode.textContent = (text === null || typeof text === 'undefined') ? '' : String(text);
+            textNodeP.textContent = (text === null || typeof text === 'undefined') ? '' : String(text); // Plain text for user or if marked is not available
         }
         
-        if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
-
-        if (sender === 'ai-thinking' && !messageElement.classList.contains('ai-thinking')) {
-            messageElement.classList.add('ai-thinking');
+        // Manage 'ai-thinking' class correctly for new or updated messages
+        if (sender === 'ai-thinking') {
+            if (!messageElement.classList.contains('ai-thinking')) {
+                 messageElement.classList.add('ai-thinking');
+            }
+        } else {
+            // If it's a normal AI message (not thinking), ensure thinking class is removed
+            // This is important if a thinking message bubble is being updated to a real AI message
+            if (sender === 'ai' && messageElement.classList.contains('ai-thinking')){
+                messageElement.classList.remove('ai-thinking');
+            }
         }
-        return messageId; // Return the ID so it can be used for updates
+
+        if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+        return messageId; 
     }
 
     function removeThinking() {
-        if (chatArea) {
-            const thinking = chatArea.querySelector('.ai-thinking');
-            if (thinking) thinking.remove();
-        } else {
-            console.error("Chat area not found when trying to remove thinking message!");
-        }
+        const thinkingElements = chatArea.querySelectorAll('.ai-thinking');
+        thinkingElements.forEach(el => el.remove());
     }
 
     async function getActiveModel() {
@@ -161,7 +183,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(displayUserMessage) appendMessage(displayUserMessage, 'user');
         
         inputField.value = '';
-        appendMessage('AI正在思考...', 'ai-thinking');
+        // Create thinking message and store its ID
+        const thinkingMessageId = appendMessage('AI正在思考...', 'ai-thinking'); 
 
         try {
             const activeModel = await getActiveModel();
@@ -261,10 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             const messages = [{ role: 'user', content: userMessageContentParts }];
-            const aiReply = await fetchLLMReply(activeModel, messages, fileAttachmentsForRequestBody);
-            
-            removeThinking();
-            appendMessage(aiReply, 'ai');
+            // Pass thinkingMessageId to fetchLLMReply, so it can be updated
+            await fetchLLMReply(activeModel, messages, fileAttachmentsForRequestBody, thinkingMessageId);
             
             selectedFiles = []; // Clear files after sending
             renderSelectedFiles(); // Update UI
@@ -276,10 +297,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function fetchLLMReply(model, messages, attachments) { // Added attachments argument
+    async function fetchLLMReply(model, messages, attachments, baseMessageId) { // Renamed thinkingMessageId to baseMessageId for clarity
         // 根据模型类型适配不同API
         if (model.type === 'openrouter') {
-            return await callOpenRouter(model, messages, attachments);
+            return await callOpenRouter(model, messages, attachments, baseMessageId);
         } else if (model.type === 'ollama') {
             // Ollama might not support complex message structures or attachments directly in this way.
             // For simplicity, we'll just send the first text part if available.
@@ -300,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return cleanedText.replace(/^\s+/, '');
     }
 
-    async function callOpenRouter(model, messages, attachments) {
+    async function callOpenRouter(model, messages, attachments, baseMessageId) { // Renamed thinkingMessageId to baseMessageId for clarity
         try {
             const requestBody = {
                 model: model.modelName,
@@ -323,68 +344,102 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(requestBody)
             });
 
-            removeThinking(); // Remove "AI is thinking..." once stream starts or if error
+            // Update the thinking/base message to "Receiving..."
+            // No longer calling removeThinking() here as we are updating the existing message.
+            if (baseMessageId) {
+                appendMessage('正在接收AI回复...', 'ai', baseMessageId); // Update existing message to "Receiving..."
+            } else {
+                // Fallback if somehow baseMessageId wasn't passed, though it should be.
+                console.error("baseMessageId not provided to callOpenRouter");
+                removeThinking(); // Clear any old thinking messages
+                baseMessageId = appendMessage('正在接收AI回复...', 'ai'); // Create a new one
+                if (!baseMessageId) return;
+            }
 
             if (!response.ok) {
                 const errorText = await response.text(); 
                 console.error('API Relay Error:', response.status, errorText);
                 try {
                     const errorJson = JSON.parse(errorText);
-                    appendMessage(`错误: ${errorJson.error || errorText}`, 'ai');
+                    // Update the base message with the error
+                    appendMessage(`错误: ${errorJson.error || errorText}`, 'ai', baseMessageId);
                 } catch (e) {
-                    appendMessage(`错误: ${errorText}`, 'ai');
+                    appendMessage(`错误: ${errorText}`, 'ai', baseMessageId);
                 }
-                return; // Stop processing on error
+                return; 
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedResponse = '';
-            // Create an AI message bubble with an initial "Receiving..." message
-            let aiMessageId = appendMessage('正在接收AI回复...', 'ai'); 
-            if (!aiMessageId) { // Could not create message bubble
-                console.error("Failed to create AI message bubble for streaming.");
-                return; 
+            let ellipsisInterval = null; // Variable to hold the interval ID
+
+            // Start ellipsis animation for "Receiving..." message
+            if (baseMessageId) {
+                let dotCount = 0;
+                const baseText = "正在接收AI回复";
+                ellipsisInterval = setInterval(() => {
+                    dotCount = (dotCount + 1) % 4; // 0, 1, 2, 3
+                    const dots = Array(dotCount).fill('.').join(''); // '', '.', '..', '...'
+                    // Update the message content with animated ellipsis
+                    // We pass 'ai-receiving' as sender to prevent marked.parse if text hasn't changed much
+                    // and to potentially style it differently if needed, though appendMessage currently doesn't use it beyond 'ai' or 'user' for markdown.
+                    appendMessage(baseText + dots, 'ai', baseMessageId);
+                }, 500); // Adjust speed as needed
             }
 
-            // Function to process stream chunks
             function processStream() {
                 reader.read().then(({ done, value }) => {
                     if (done) {
-                        // Stream finished
-                        // console.log("Stream complete.");
-                        // Markdown processing will happen here on accumulatedResponse later
+                        clearInterval(ellipsisInterval); 
+                        appendMessage(accumulatedResponse, 'ai', baseMessageId);
                         return;
                     }
 
                     const chunk = decoder.decode(value, { stream: true });
-                    // Assuming SSE format from OpenRouter via our relay
-                    // Example chunk: "data: {\"id\":\"cmpl-xxx\", \"choices\":[{\"delta\":{\"content\":\"Hello\"}}], ...}\n\n"
-                    // Or just "data: { ... }\n\ndata: { ... }\n\n"
                     const lines = chunk.split('\n');
+                    let hasNewContent = false; // Flag to check if this chunk added visible content
+
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             const jsonStr = line.substring(6);
-                            if (jsonStr.trim() === '[DONE]') { // OpenRouter specific DONE signal
-                                // console.log("Stream marked [DONE]");
+                            if (jsonStr.trim() === '[DONE]') {
+                                clearInterval(ellipsisInterval);
+                                appendMessage(accumulatedResponse, 'ai', baseMessageId); // Final update
                                 return;
                             }
                             try {
                                 const parsed = JSON.parse(jsonStr);
                                 if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
                                     accumulatedResponse += parsed.choices[0].delta.content;
-                                    appendMessage(accumulatedResponse, 'ai', aiMessageId); // Update existing bubble
+                                    hasNewContent = true; 
                                 }
                             } catch (e) {
                                 // console.warn('Error parsing stream JSON:', jsonStr, e);
-                                // Might be a non-JSON part of the stream or an error, ignore for now or log
                             }
                         }
                     }
-                    processStream(); // Continue reading
+
+                    // If new content was actually added, stop ellipsis and update message with content
+                    if (hasNewContent) {
+                        if (ellipsisInterval) {
+                            clearInterval(ellipsisInterval);
+                            ellipsisInterval = null; 
+                        }
+                        appendMessage(accumulatedResponse, 'ai', baseMessageId); 
+                    } else if (!ellipsisInterval && !done) {
+                        // If ellipsis was stopped but there's no new content yet (e.g. empty data chunks) and not done,
+                        // potentially restart it or ensure the "Receiving..." message stays without dots if preferred.
+                        // For now, we do nothing, relying on the interval to continue if it wasn't cleared.
+                    }
+
+                    if (!done) {
+                        processStream(); 
+                    }
                 }).catch(err => {
+                    clearInterval(ellipsisInterval); // Stop ellipsis on error
                     console.error('Error reading stream from /api/relay:', err);
-                    appendMessage('读取回复流时出错。', 'ai', aiMessageId);
+                    appendMessage('读取回复流时出错。', 'ai', baseMessageId);
                 });
             }
             processStream(); // Start processing the stream
@@ -395,8 +450,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('callOpenRouter Fetch/Setup Error:', error);
-            removeThinking();
-            appendMessage(`调用OpenRouter出错: ${error.message}`, 'ai');
+            // If an error occurs, ensure ellipsisInterval is cleared if it was started
+            if (ellipsisInterval) {
+                 clearInterval(ellipsisInterval);
+            }
+            if (baseMessageId) {
+                appendMessage(`调用OpenRouter出错: ${error.message}`, 'ai', baseMessageId);
+            } else {
+                removeThinking(); // Fallback if no baseMessageId
+                appendMessage(`调用OpenRouter出错: ${error.message}`, 'ai');
+            }
         }
     }
 

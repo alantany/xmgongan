@@ -137,12 +137,22 @@ footer {
     margin-bottom: 15px;
     padding: 10px 15px;
     border-radius: 18px;
-    max-width: 70%;
+    max-width: 75%; /* Adjusted max-width slightly */
     line-height: 1.4;
+    display: flex; /* Enable flexbox for icon and text alignment */
+    align-items: flex-start; /* Align items to the top */
+}
+
+.message .message-icon {
+    flex-shrink: 0; /* Prevent icon from shrinking */
+    /* SVG already has margin-right, width, height via inline style */
 }
 
 .message p {
     margin: 0;
+    word-wrap: break-word; /* Ensure long words break and wrap */
+    overflow-wrap: break-word; /* Ensure long words break and wrap - more modern */
+    flex-grow: 1; /* Allow text to take remaining space */
 }
 
 .user-message {
