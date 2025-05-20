@@ -1,0 +1,18 @@
+{
+  "name": "ai-assistant-system",
+  "version": "1.0.0",
+  "description": "公安办案AI辅助分析系统",
+  "main": "server/app.js",
+  "scripts": {
+    "dev": "cd server && node app.js",
+    "start": "cd server && node app.js"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "chat",
+    "admin"
+  ],
+  "author": "",
+  "license": "ISC"
+} 

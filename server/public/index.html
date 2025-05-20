@@ -12,19 +12,22 @@
         <p>北京联通</p>
     </header>
     <div class="container">
-        <main class="chat-area">
-            <!-- 聊天消息将显示在这里 -->
+        <main class="chat-area" id="chat-area">
+            <!-- Messages will appear here -->
         </main>
         <footer>
             <div class="input-area">
-                <input type="text" placeholder="输入您的问题...">
-                <button class="mic-button">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-mic"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                </button>
-                <button class="send-button">发送</button>
+                <input type="file" id="file-upload-input" multiple accept=".txt,.pdf,.doc,.docx,.xls,.xlsx,.jpeg,.jpg,.png" style="display: none;">
+                <button id="upload-file-button" class="upload-btn">📎</button>
+                <input type="text" placeholder="输入消息...">
+                <button id="send-button">发送</button>
+            </div>
+            <div id="selected-files-container" class="selected-files">
+                <!-- Selected files will be listed here -->
             </div>
         </footer>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html> 

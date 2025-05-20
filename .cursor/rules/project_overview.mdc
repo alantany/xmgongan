@@ -1,0 +1,67 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Project Overview and Key Files
+
+This project is a "公安办案AI辅助分析系统" (Public Security Case Handling AI Auxiliary Analysis System) with a chat interface for AI interaction and an admin panel for managing Large Language Model (LLM) configurations.
+
+## Backend (Node.js/Express)
+
+- **Main Server File**: `[server/app.js](mdc:server/app.js)`
+    - Initializes an Express server.
+    - Serves static frontend files from the `server/public` directory.
+    - Provides RESTful APIs for managing LLM configurations (CRUD operations, activate, import/export).
+    - Includes an API endpoint `POST /api/relay` which acts as a proxy to the active LLM. This endpoint dynamically reads the active model's `apiUrl` and `apikey` from `[server/models.json](mdc:server/models.json)`.
+
+- **Model Configuration**: `[server/models.json](mdc:server/models.json)`
+    - Stores an array of LLM configurations. Each configuration includes:
+        - `name`: User-friendly name of the model.
+        - `apiUrl`: The API endpoint URL for the LLM.
+        - `apikey`: The API key for the LLM.
+        - `id`: A unique identifier for the model.
+        - `isActive`: Boolean, indicating if this is the currently active model.
+        - `type`: Type of the model (e.g., "openrouter", "ollama").
+        - `modelName`: The specific model identifier used by the LLM provider (e.g., "deepseek/deepseek-r1:free").
+    - This file is read and written by the backend API endpoints in `[server/app.js](mdc:server/app.js)`.
+
+- **Package Configuration**: `[server/package.json](mdc:server/package.json)`
+    - Defines project dependencies (Express, cors, body-parser, node-fetch).
+    - Contains scripts for running the application (e.g., `npm start` or `npm run dev` if configured).
+
+## Frontend (HTML, CSS, JavaScript)
+
+All frontend files are located in the `server/public` directory and served statically by the Express server.
+
+- **Chat Interface**:
+    - **HTML**: `[server/public/index.html](mdc:server/public/index.html)` - The main page for the chat UI.
+    - **JavaScript**: `[server/public/script.js](mdc:server/public/script.js)`
+        - Handles user input and message display.
+        - Fetches the active model details from `/api/models/active`.
+        - Sends user messages to the `/api/relay` backend endpoint for LLM processing.
+        - Supports different LLM types (OpenRouter, Ollama, Telcom) by adapting the request structure.
+    - **CSS**: `[server/public/style.css](mdc:server/public/style.css)` - Styles for the chat interface.
+
+- **Admin Panel**:
+    - **HTML**: `[server/public/admin.html](mdc:server/public/admin.html)` - The main page for the LLM configuration management UI.
+    - **JavaScript**: `[server/public/admin.js](mdc:server/public/admin.js)`
+        - Manages LLM configurations (add, edit, delete, set active).
+        - Interacts with the `/api/models/*` backend endpoints.
+        - Supports import and export of model configurations (via `models.json`).
+    - **CSS**: `[server/public/admin.css](mdc:server/public/admin.css)` - Styles for the admin panel.
+
+## Key Interactions
+
+1.  **Chat**:
+    - User types a message in `[server/public/index.html](mdc:server/public/index.html)`.
+    - `[server/public/script.js](mdc:server/public/script.js)` first calls `/api/models/active` to get the current active model.
+    - Then, `[server/public/script.js](mdc:server/public/script.js)` sends the message and model details to `/api/relay` in `[server/app.js](mdc:server/app.js)`.
+    - `[server/app.js](mdc:server/app.js)` reads `[server/models.json](mdc:server/models.json)` to get the `apiUrl` and `apikey` of the active model.
+    - `[server/app.js](mdc:server/app.js)` forwards the request to the actual LLM API.
+    - The response is returned to `[server/public/script.js](mdc:server/public/script.js)` and displayed in the chat.
+
+2.  **Admin Model Management**:
+    - Admin user interacts with `[server/public/admin.html](mdc:server/public/admin.html)`.
+    - `[server/public/admin.js](mdc:server/public/admin.js)` makes calls to `/api/models/*` endpoints in `[server/app.js](mdc:server/app.js)`.
+    - `[server/app.js](mdc:server/app.js)` updates `[server/models.json](mdc:server/models.json)` accordingly.

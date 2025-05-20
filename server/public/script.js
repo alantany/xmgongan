@@ -3,29 +3,55 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     const inputField = document.querySelector('.input-area input[type="text"]');
-    const sendButton = document.querySelector('.input-area .send-button');
+    const sendButton = document.getElementById('send-button');
     const micButton = document.querySelector('.input-area .mic-button');
-    const chatArea = document.querySelector('.chat-area');
+    const chatArea = document.getElementById('chat-area');
+    const uploadFileButton = document.getElementById('upload-file-button');
+    const fileUploadInput = document.getElementById('file-upload-input');
+    const selectedFilesContainer = document.getElementById('selected-files-container');
 
-    sendButton.addEventListener('click', async () => {
-        const messageText = inputField.value.trim();
-        if (!messageText) return;
-        appendMessage(messageText, 'user');
-        inputField.value = '';
-        // 获取当前激活模型
-        const model = await getActiveModel();
-        if (!model) {
-            appendMessage('未配置可用的大模型，请联系管理员。', 'ai');
-            return;
+    let selectedFiles = []; // Store selected files
+
+    // Trigger file input click when upload button is clicked
+    uploadFileButton.addEventListener('click', () => {
+        fileUploadInput.click();
+    });
+
+    // Handle file selection
+    fileUploadInput.addEventListener('change', (event) => {
+        selectedFiles = Array.from(event.target.files);
+        renderSelectedFiles();
+        fileUploadInput.value = ''; // Reset file input to allow re-selecting the same file
+    });
+
+    function renderSelectedFiles() {
+        selectedFilesContainer.innerHTML = '';
+        if (selectedFiles.length > 0) {
+            const list = document.createElement('ul');
+            selectedFiles.forEach(file => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = 'x';
+                removeBtn.onclick = () => {
+                    selectedFiles = selectedFiles.filter(f => f !== file);
+                    renderSelectedFiles();
+                };
+                listItem.appendChild(removeBtn);
+                list.appendChild(listItem);
+            });
+            selectedFilesContainer.appendChild(list);
         }
-        appendMessage('AI 正在思考...', 'ai-thinking');
-        try {
-            const aiReply = await fetchLLMReply(model, messageText);
-            removeThinking();
-            appendMessage(aiReply, 'ai');
-        } catch (err) {
-            removeThinking();
-            appendMessage('请求大模型失败: ' + err.message, 'ai');
+    }
+
+    // Send message when Send button is clicked
+    sendButton.addEventListener('click', sendMessage);
+
+    // Send message when Enter key is pressed in input field
+    inputField.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault(); // Prevent new line
+            sendMessage();
         }
     });
 
@@ -38,26 +64,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Function to append messages to the chat area
-    function appendMessage(text, sender) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message', `${sender}-message`);
+    function appendMessage(text, sender, messageId) {
+        let messageElement = messageId ? document.getElementById(messageId) : null;
+        let textNode;
+
+        if (messageElement) {
+            // Update existing message element (for streaming)
+            textNode = messageElement.querySelector('p');
+            if (!textNode) { // Should not happen if structured correctly
+                textNode = document.createElement('p');
+                messageElement.appendChild(textNode);
+            }
+        } else {
+            // Create new message element
+            messageId = sender + '-' + Date.now(); // Generate a unique ID for new messages
+            messageElement = document.createElement('div');
+            messageElement.id = messageId;
+            messageElement.classList.add('message', `${sender}-message`);
+            textNode = document.createElement('p');
+            messageElement.appendChild(textNode);
+            
+            if (chatArea) {
+                chatArea.appendChild(messageElement);
+            } else {
+                console.error("Chat area not found for new message!");
+                return null; // Cannot append
+            }
+        }
+
+        if (sender === 'ai' && typeof marked !== 'undefined') {
+            // Ensure text is a string before parsing. Default to empty string if null/undefined.
+            const markdownInput = (text === null || typeof text === 'undefined') ? '' : String(text);
+            textNode.innerHTML = marked.parse(markdownInput);
+        } else {
+            textNode.textContent = (text === null || typeof text === 'undefined') ? '' : String(text);
+        }
         
-        const textNode = document.createElement('p');
-        textNode.textContent = text;
-        messageElement.appendChild(textNode);
+        if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
 
-        chatArea.appendChild(messageElement);
-        chatArea.scrollTop = chatArea.scrollHeight; // Scroll to the bottom
-
-        // Add specific class for 'AI is thinking...' for easy removal
-        if (sender === 'ai-thinking') {
+        if (sender === 'ai-thinking' && !messageElement.classList.contains('ai-thinking')) {
             messageElement.classList.add('ai-thinking');
         }
+        return messageId; // Return the ID so it can be used for updates
     }
 
     function removeThinking() {
-        const thinking = chatArea.querySelector('.ai-thinking');
-        if (thinking) thinking.remove();
+        if (chatArea) {
+            const thinking = chatArea.querySelector('.ai-thinking');
+            if (thinking) thinking.remove();
+        } else {
+            console.error("Chat area not found when trying to remove thinking message!");
+        }
     }
 
     async function getActiveModel() {
@@ -66,14 +123,134 @@ document.addEventListener('DOMContentLoaded', () => {
         return await res.json();
     }
 
-    async function fetchLLMReply(model, userInput) {
+    async function sendMessage() {
+        const userInput = inputField.value.trim();
+        // Allow sending message if there is text input or files selected
+        if (!userInput && selectedFiles.length === 0) return;
+
+        // Use placeholder if input is empty but files are present
+        const displayUserMessage = userInput || (selectedFiles.length > 0 ? "[发送文件中...]" : "");
+        if(displayUserMessage) appendMessage(displayUserMessage, 'user');
+        
+        inputField.value = '';
+        appendMessage('AI正在思考...', 'ai-thinking');
+
+        try {
+            const activeModel = await getActiveModel();
+            if (!activeModel) {
+                removeThinking();
+                appendMessage('错误：没有激活的模型。', 'ai');
+                return;
+            }
+
+            let userMessageContentParts = [];
+            if (userInput) {
+                userMessageContentParts.push({ type: 'text', text: userInput });
+            }
+            
+            const fileAttachmentsForRequestBody = []; // For non-image base64 data for 'attachments' field
+
+            if (selectedFiles.length > 0) {
+                const filePromises = selectedFiles.map(file => {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve({ name: file.name, type: file.type, content: reader.result, file_obj: file });
+                        reader.onerror = reject;
+
+                        if (file.type.startsWith('image/')) {
+                            reader.readAsDataURL(file); // Base64 for images
+                        } else if (file.type === 'text/plain') {
+                            reader.readAsText(file); // Text for .txt
+                        } else if ([
+                            'application/pdf',
+                            'application/msword', // .doc
+                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+                            'application/vnd.ms-excel', // .xls
+                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' // .xlsx
+                        ].includes(file.type)) {
+                            reader.readAsDataURL(file); // Base64 for these document types
+                        } else {
+                            console.warn(`Unsupported file type: ${file.name} (${file.type}). Skipping.`);
+                            resolve({ name: file.name, type: file.type, content: null, error: 'Unsupported file type' });
+                        }
+                    });
+                });
+
+                const processedFiles = await Promise.all(filePromises);
+                let textFileCombinedContent = "";
+
+                for (const pf of processedFiles) {
+                    if (pf.error) {
+                        appendMessage(`无法处理文件 ${pf.name}: ${pf.error}`, 'ai');
+                        continue;
+                    }
+                    if (!pf.content) continue;
+
+                    if (pf.type.startsWith('image/')) {
+                        userMessageContentParts.push({ type: 'image_url', image_url: { url: pf.content } });
+                    } else if (pf.type === 'text/plain') {
+                        textFileCombinedContent += `--- BEGIN FILE: ${pf.name} ---\n${pf.content}\n--- END FILE: ${pf.name} ---\n\n`;
+                    } else { // PDF, DOCX, XLSX etc. as Base64
+                        fileAttachmentsForRequestBody.push({
+                            filename: pf.name,
+                            mime_type: pf.type,
+                            data: pf.content.split(',')[1] // Remove "data:...;base64," prefix
+                        });
+                        // Add a placeholder in the text message part
+                        const filePlaceholder = `[用户上传了文件: ${pf.name}]`;
+                        if (userMessageContentParts.find(p => p.type === 'text')) {
+                            userMessageContentParts.find(p => p.type === 'text').text += `\n${filePlaceholder}`;
+                        } else {
+                            userMessageContentParts.unshift({ type: 'text', text: filePlaceholder });
+                        }
+                    }
+                }
+                
+                if (textFileCombinedContent) {
+                    if (userMessageContentParts.find(p => p.type === 'text')){
+                        userMessageContentParts.find(p => p.type === 'text').text = textFileCombinedContent + userMessageContentParts.find(p => p.type === 'text').text;
+                    } else {
+                        userMessageContentParts.unshift({ type: 'text', text: textFileCombinedContent });
+                    }
+                }
+            }
+            
+            // Ensure there's at least one text part if other parts exist or if it was only files
+            if (userMessageContentParts.length > 0 && !userMessageContentParts.find(p=>p.type === 'text')){
+                 userMessageContentParts.unshift({ type: 'text', text: "[处理上传的文件]" });
+            } else if (userMessageContentParts.length === 0 && selectedFiles.length > 0){
+                 userMessageContentParts.push({ type: 'text', text: "[处理上传的文件]" });
+            }
+            
+            const messages = [{ role: 'user', content: userMessageContentParts }];
+            const aiReply = await fetchLLMReply(activeModel, messages, fileAttachmentsForRequestBody);
+            
+            removeThinking();
+            appendMessage(aiReply, 'ai');
+            
+            selectedFiles = []; // Clear files after sending
+            renderSelectedFiles(); // Update UI
+
+        } catch (error) {
+            removeThinking();
+            appendMessage(`错误: ${error.message}`, 'ai');
+            console.error("Detailed error:", error);
+        }
+    }
+
+    async function fetchLLMReply(model, messages, attachments) { // Added attachments argument
         // 根据模型类型适配不同API
         if (model.type === 'openrouter') {
-            return await callOpenRouter(model, userInput);
+            return await callOpenRouter(model, messages, attachments);
         } else if (model.type === 'ollama') {
-            return await callOllama(model, userInput);
+            // Ollama might not support complex message structures or attachments directly in this way.
+            // For simplicity, we'll just send the first text part if available.
+            const simpleTextInput = messages[0]?.content?.find(p => p.type === 'text')?.text || '';
+            return await callOllama(model, simpleTextInput);
         } else if (model.type === 'telcom') {
-            return await callTelcom(model, userInput);
+            // Similar to Ollama, Telcom might expect simpler input.
+            const simpleTextInput = messages[0]?.content?.find(p => p.type === 'text')?.text || '';
+            return await callTelcom(model, simpleTextInput);
         } else {
             throw new Error('暂不支持的模型类型: ' + model.type);
         }
@@ -85,53 +262,103 @@ document.addEventListener('DOMContentLoaded', () => {
         return cleanedText.replace(/^\s+/, '');
     }
 
-    async function callOpenRouter(model, userInput) {
+    async function callOpenRouter(model, messages, attachments) {
         try {
-            // 构建多轮消息（可扩展为历史消息）
-            const messages = [
-                { role: 'user', content: userInput }
-            ];
-            // 构建请求体
             const requestBody = {
                 model: model.modelName,
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 4000,
+                // stream: true is now set by the backend /api/relay
             };
-            // 发送请求到本地代理
+
+            if (attachments && attachments.length > 0) {
+                requestBody.attachments = attachments;
+            }
+
             const response = await fetch('/api/relay', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
+                    // 'Accept': 'text/event-stream' // Front-end doesn't need to set this, backend does
                 },
                 body: JSON.stringify(requestBody)
             });
+
+            removeThinking(); // Remove "AI is thinking..." once stream starts or if error
+
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error('API响应错误:', response.status, response.statusText);
-                console.error('错误详情:', errorText);
-                throw new Error(`API请求失败: ${response.status} - ${errorText.substring(0, 200)}...`);
+                const errorText = await response.text(); 
+                console.error('API Relay Error:', response.status, errorText);
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    appendMessage(`错误: ${errorJson.error || errorText}`, 'ai');
+                } catch (e) {
+                    appendMessage(`错误: ${errorText}`, 'ai');
+                }
+                return; // Stop processing on error
             }
-            const responseText = await response.text();
-            if (!responseText.trim()) {
-                throw new Error('API响应为空');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedResponse = '';
+            // Create an AI message bubble with an initial "Receiving..." message
+            let aiMessageId = appendMessage('正在接收AI回复...', 'ai'); 
+            if (!aiMessageId) { // Could not create message bubble
+                console.error("Failed to create AI message bubble for streaming.");
+                return; 
             }
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (parseError) {
-                console.error('JSON解析错误:', parseError);
-                throw new Error('无法解析API响应: ' + parseError.message);
+
+            // Function to process stream chunks
+            function processStream() {
+                reader.read().then(({ done, value }) => {
+                    if (done) {
+                        // Stream finished
+                        // console.log("Stream complete.");
+                        // Markdown processing will happen here on accumulatedResponse later
+                        return;
+                    }
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    // Assuming SSE format from OpenRouter via our relay
+                    // Example chunk: "data: {\"id\":\"cmpl-xxx\", \"choices\":[{\"delta\":{\"content\":\"Hello\"}}], ...}\n\n"
+                    // Or just "data: { ... }\n\ndata: { ... }\n\n"
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const jsonStr = line.substring(6);
+                            if (jsonStr.trim() === '[DONE]') { // OpenRouter specific DONE signal
+                                // console.log("Stream marked [DONE]");
+                                return;
+                            }
+                            try {
+                                const parsed = JSON.parse(jsonStr);
+                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                    accumulatedResponse += parsed.choices[0].delta.content;
+                                    appendMessage(accumulatedResponse, 'ai', aiMessageId); // Update existing bubble
+                                }
+                            } catch (e) {
+                                // console.warn('Error parsing stream JSON:', jsonStr, e);
+                                // Might be a non-JSON part of the stream or an error, ignore for now or log
+                            }
+                        }
+                    }
+                    processStream(); // Continue reading
+                }).catch(err => {
+                    console.error('Error reading stream from /api/relay:', err);
+                    appendMessage('读取回复流时出错。', 'ai', aiMessageId);
+                });
             }
-            if (!data.choices || !data.choices.length || !data.choices[0].message) {
-                throw new Error('API响应格式不正确');
-            }
-            let content = data.choices[0].message.content.trim();
-            content = cleanupExcessiveWhitespace(content);
-            return content;
+            processStream(); // Start processing the stream
+            
+            // Since we are streaming, this function no longer returns the full AI reply directly.
+            // The reply is appended to the DOM reactively.
+            return; // Or return a promise that resolves when stream is done, if needed elsewhere
+
         } catch (error) {
-            console.error('API调用错误:', error);
-            throw error;
+            console.error('callOpenRouter Fetch/Setup Error:', error);
+            removeThinking();
+            appendMessage(`调用OpenRouter出错: ${error.message}`, 'ai');
         }
     }
 

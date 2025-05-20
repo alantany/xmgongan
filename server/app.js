@@ -13,7 +13,8 @@ const MODELS_FILE = path.join(__dirname, 'models.json');
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // 工具函数：读写models.json
 function readModels() {
@@ -102,25 +103,88 @@ app.get('/api/models/export', (req, res) => {
 app.post('/api/relay', async (req, res) => {
     // 动态读取当前激活模型
     const data = readModels();
-    const active = data.models.find(m => m.isActive);
-    if (!active) {
+    const activeModel = data.models.find(m => m.isActive);
+    if (!activeModel) {
         return res.status(400).json({ error: '未配置激活模型' });
     }
-    const apiUrl = active.apiUrl;
-    const apiKey = active.apikey;
+    const apiUrl = activeModel.apiUrl;
+    const apiKey = activeModel.apikey;
+
     try {
+        // 构造发送给大模型的请求体，并强制启用流式输出
+        const requestBodyForLLM = {
+            ...req.body, // 原始请求体，如 model, messages, temperature等
+            stream: true // 强制启用流式输出
+        };
+
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+                'Authorization': `Bearer ${apiKey}`,
+                'Accept': 'text/event-stream' // 告知OpenRouter期望SSE
             },
-            body: JSON.stringify(req.body)
+            body: JSON.stringify(requestBodyForLLM) // 发送包含 stream:true 的请求体
         });
-        const data = await response.text();
-        res.status(response.status).send(data);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('LLM API Error:', response.status, errorText);
+            return res.status(response.status).json({ error: `LLM API Error: ${errorText}` });
+        }
+
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        // res.flushHeaders(); // 在某些Node版本/Express设置下可能需要
+
+        // const reader = response.body.getReader(); // Old way with Web Streams API
+        // const decoder = new TextDecoder(); // Old way
+
+        // New way with Node.js Streams API for node-fetch v2
+        response.body.on('data', (chunk) => {
+            // chunk is a Buffer, TextDecoder can still be used if needed, 
+            // but res.write() can handle Buffers directly.
+            res.write(chunk);
+        });
+
+        response.body.on('end', () => {
+            res.end();
+        });
+
+        response.body.on('error', (err) => {
+            console.error('Error streaming data from LLM (response.body error):', err);
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Error streaming data from LLM' });
+            } else {
+                res.end(); // Ensure connection is closed on error
+            }
+        });
+
+        // function push() { // Old recursive push function
+        //     reader.read().then(({ done, value }) => {
+        //         if (done) {
+        //             res.end();
+        //             return;
+        //         }
+        //         res.write(decoder.decode(value, { stream: true }));
+        //         push();
+        //     }).catch(err => {
+        //         console.error('Error reading stream from LLM:', err);
+        //         if (!res.headersSent) {
+        //             res.status(500).json({ error: 'Error streaming data from LLM' });
+        //         } else {
+        //             res.end(); // Ensure connection is closed on error
+        //         }
+        //     });
+        // }
+        // push(); // Old way call
+
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Relay error:', err);
+        if (!res.headersSent) {
+             res.status(500).json({ error: err.message });
+        }
     }
 });
 
