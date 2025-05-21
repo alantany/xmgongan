@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger file input click when upload button is clicked
     uploadFileButton.addEventListener('click', () => {
-        fileUploadInput.accept = ".txt,.pdf,.doc,.docx,.xls,.xlsx,.jpeg,.jpg,.png,.csv"; // Already includes .doc
+        fileUploadInput.accept = ".txt,.pdf,.doc,.docx,.xls,.xlsx,.jpeg,.jpg,.png,.csv,.wps"; // Add .wps
         fileUploadInput.click();
     });
 
@@ -219,9 +219,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
                             'application/vnd.ms-excel', // .xls
                             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-                            'text/csv' // .csv
-                        ].includes(file.type)) {
-                            reader.readAsDataURL(file); // Base64 for these document types
+                            'text/csv',
+                            'application/vnd.ms-works', // Common MIME for .wps, though often generic
+                            // Add other potential WPS MIME types if known, or rely on extension for backend.
+                            // For files not matching specific MIME types but ending with .wps, we can still try backend processing.
+                            (file.name.toLowerCase().endsWith('.wps') && !file.type) // If no specific MIME but ends with .wps
+                        ].includes(file.type) || file.name.toLowerCase().endsWith('.wps')) { // Also check extension directly
+                            reader.readAsDataURL(file); // Base64 for these document types, including WPS
                         } else {
                             console.warn(`Unsupported file type from browser: ${file.name} (${file.type}). Trying to read as Base64 for backend processing.`);
                             // Fallback for unknown types, potentially including CSV if MIME type isn't 'text/csv'

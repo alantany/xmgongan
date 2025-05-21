@@ -140,8 +140,9 @@ app.post('/api/relay', async (req, res) => {
         // 处理附件 (PDF, DOCX, XLSX, Images for OCR)
         if (req.body.attachments && Array.isArray(req.body.attachments)) {
             for (const attachment of req.body.attachments) {
-                if (!attachment.data || !attachment.mime_type || !attachment.filename) {
-                    console.warn('Skipping invalid attachment:', attachment);
+                // Allow processing if filename and data are present, even if mime_type is initially empty from client
+                if (!attachment.data || !attachment.filename) {
+                    console.warn('Skipping invalid attachment (missing data or filename):', attachment);
                     continue;
                 }
                 
@@ -232,6 +233,80 @@ app.post('/api/relay', async (req, res) => {
                             } else {
                                 extractedText = `[提取 ${fileName} 内容失败: ${mammothError.message}]`;
                             }
+                        }
+                    } else if (fileName.endsWith('.wps')) { // Prioritize file extension for .wps
+                        fileTypeForLog = 'WPS (LibreOffice)';
+                        let tempInputFilePath = '';
+                        let tempOutputDir = '';
+                        let tempOutputTxtFilePath = ''; // Corrected variable name
+                        try {
+                            tempOutputDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'wps-processing-'));
+                            const originalFileName = attachment.filename ? attachment.filename.trim() : Date.now() + '-tempfile.wps';
+                            tempInputFilePath = path.join(tempOutputDir, originalFileName);
+                            await fsPromises.writeFile(tempInputFilePath, buffer);
+
+                            const outputTxtFileName = path.basename(tempInputFilePath, path.extname(tempInputFilePath)) + '.txt';
+                            tempOutputTxtFilePath = path.join(tempOutputDir, outputTxtFileName);
+
+                            extractedText = await new Promise((resolve, reject) => {
+                                const command = 'soffice'; // or 'libreoffice' depending on system
+                                const args = [
+                                    '--headless',
+                                    '--convert-to',
+                                    'txt:Text',
+                                    '--outdir',
+                                    tempOutputDir,
+                                    tempInputFilePath
+                                ];
+                                
+                                console.log(`Executing: ${command} ${args.join(' ')}`); // Log command execution
+
+                                const libreoffice = spawn(command, args);
+                                let errorOutput = '';
+                                let stdOutput = ''; // Capture stdout for potential info/debug messages from soffice
+
+                                libreoffice.stdout.on('data', (data) => {
+                                    stdOutput += data.toString();
+                                });
+                                libreoffice.stderr.on('data', (data) => {
+                                    errorOutput += data.toString();
+                                });
+
+                                libreoffice.on('close', async (code) => {
+                                    console.log(`LibreOffice exited with code ${code}.`);
+                                    if (stdOutput) console.log('LibreOffice stdout:', stdOutput);
+                                    if (errorOutput) console.log('LibreOffice stderr:', errorOutput);
+
+                                    if (code === 0) {
+                                        try {
+                                            if (await fsPromises.stat(tempOutputTxtFilePath).then(() => true).catch(() => false)) {
+                                                const content = await fsPromises.readFile(tempOutputTxtFilePath, 'utf-8');
+                                                resolve(content);
+                                            } else {
+                                                reject(new Error(`LibreOffice conversion success (code 0), but output file ${outputTxtFileName} not found. Check soffice stdout/stderr logs.`));
+                                            }
+                                        } catch (readError) {
+                                            reject(new Error(`Error reading LibreOffice output file: ${readError.message}`));
+                                        }
+                                    } else {
+                                        if (errorOutput.includes('ENOENT') || (process.platform !== 'win32' && code === 127)) {
+                                            reject(new Error('soffice (LibreOffice) 命令未找到或无法执行。请确保已正确安装并在系统 PATH 中。'));
+                                        } else {
+                                            reject(new Error(`LibreOffice (soffice) 执行失败，退出码: ${code}. 错误输出: ${errorOutput || '无特定错误输出'}`));
+                                        }
+                                    }
+                                });
+                                libreoffice.on('error', (err) => {
+                                    reject(new Error(`执行 soffice (LibreOffice) 失败: ${err.message}. 请确保 LibreOffice 已安装并在系统 PATH 中。`));
+                                });
+                            });
+                        } catch (wpsProcessingError) {
+                            console.error(`Error processing .wps file ${attachment.filename || fileName} with LibreOffice:`, wpsProcessingError);
+                            extractedText = `[使用 LibreOffice 处理 .wps 文件 ${attachment.filename || fileName} 失败: ${wpsProcessingError.message}]`;
+                        } finally {
+                            if (tempInputFilePath) await fsPromises.unlink(tempInputFilePath).catch(e => console.error(`Failed to delete temp input file ${tempInputFilePath}:`, e));
+                            if (tempOutputTxtFilePath) await fsPromises.unlink(tempOutputTxtFilePath).catch(e => console.error(`Failed to delete temp output file ${tempOutputTxtFilePath}:`, e));
+                            if (tempOutputDir) await fsPromises.rm(tempOutputDir, { recursive: true, force: true }).catch(e => console.error(`Failed to delete temp directory ${tempOutputDir}:`, e));
                         }
                     } else if (mimeType === 'text/csv' || fileName.endsWith('.csv')) {
                         fileTypeForLog = 'CSV';
