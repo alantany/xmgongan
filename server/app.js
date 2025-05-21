@@ -1,6 +1,9 @@
 const express = require('express');
 const fs = require('fs');
+const fsPromises = require('fs').promises; // For modern fs operations like mkdtemp, rm
 const path = require('path');
+const os = require('os'); // For os.tmpdir()
+const { spawn } = require('child_process'); // For executing antiword
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const fetch = require('node-fetch');
@@ -151,6 +154,13 @@ app.post('/api/relay', async (req, res) => {
                     const mimeType = attachment.mime_type ? attachment.mime_type.trim() : '';
                     const fileName = attachment.filename ? attachment.filename.trim().toLowerCase() : '';
                     console.log(`Sanitized values - fileName: '${fileName}', mimeType: '${mimeType}'`);
+
+                    // Detailed DOC/DOCX Check
+                    console.log(`DOC/DOCX Check part 1 (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'): ${mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}`);
+                    console.log(`DOC/DOCX Check part 2 (fileName.endsWith('.docx')): ${fileName.endsWith('.docx')}`);
+                    console.log(`DOC/DOCX Check part 3 (mimeType === 'application/msword'): ${mimeType === 'application/msword'}`);
+                    console.log(`DOC/DOCX Check part 4 (fileName.endsWith('.doc')): ${fileName.endsWith('.doc')}`);
+
                     console.log(`CSV Check part 1 (mimeType === 'text/csv'): ${mimeType === 'text/csv'}`);
                     console.log(`CSV Check part 2 (fileName.endsWith('.csv')): ${fileName.endsWith('.csv')}`);
 
@@ -158,10 +168,71 @@ app.post('/api/relay', async (req, res) => {
                         fileTypeForLog = 'PDF';
                         const pdfData = await pdf(buffer);
                         extractedText = pdfData.text;
+                    } else if (mimeType === 'application/msword' || fileName.endsWith('.doc')) {
+                        fileTypeForLog = 'DOC (antiword)';
+                        let tempFilePath = '';
+                        let tempDir = '';
+                        try {
+                            // Create a temporary directory
+                            tempDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'doc-processing-'));
+                            tempFilePath = path.join(tempDir, fileName.endsWith('.doc') ? fileName : Date.now() + '-tempfile.doc');
+                            await fsPromises.writeFile(tempFilePath, buffer);
+
+                            extractedText = await new Promise((resolve, reject) => {
+                                const antiword = spawn('antiword', [tempFilePath]);
+                                let output = '';
+                                let errorOutput = '';
+
+                                antiword.stdout.on('data', (data) => {
+                                    output += data.toString();
+                                });
+
+                                antiword.stderr.on('data', (data) => {
+                                    errorOutput += data.toString();
+                                });
+
+                                antiword.on('close', (code) => {
+                                    if (code === 0) {
+                                        resolve(output);
+                                    } else {
+                                        // Check for ENOENT (antiword not found)
+                                        if (errorOutput.includes('ENOENT') || (process.platform !== 'win32' && code === 127)) { 
+                                           reject(new Error('antiword 命令未找到或无法执行。请确保已正确安装并在系统 PATH 中。'));
+                                        } else {
+                                           reject(new Error(`antiword 执行失败，退出码: ${code}. 错误输出: ${errorOutput || '无特定错误输出'}`));
+                                        }
+                                    }
+                                });
+                                antiword.on('error', (err) => {
+                                    // This typically catches spawn ENOENT (command not found)
+                                    reject(new Error(`执行 antiword 失败: ${err.message}. 请确保 antiword 已安装并在系统 PATH 中。`));
+                                });
+                            });
+                        } catch (antiwordError) {
+                            console.error(`Error processing .doc file ${fileName} with antiword:`, antiwordError);
+                            extractedText = `[使用 antiword 处理 .doc 文件 ${fileName} 失败: ${antiwordError.message}]`;
+                        } finally {
+                            if (tempFilePath) {
+                                await fsPromises.unlink(tempFilePath).catch(e => console.error(`Failed to delete temp file ${tempFilePath}:`, e));
+                            }
+                            if (tempDir) {
+                                await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(e => console.error(`Failed to delete temp directory ${tempDir}:`, e));
+                            }
+                        }
                     } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || fileName.endsWith('.docx')) {
                         fileTypeForLog = 'DOCX';
-                        const mammothResult = await mammoth.extractRawText({ buffer });
-                        extractedText = mammothResult.value;
+                        try {
+                            const mammothResult = await mammoth.extractRawText({ buffer });
+                            extractedText = mammothResult.value;
+                        } catch (mammothError) {
+                            console.error(`Mammoth error processing ${fileName} (${fileTypeForLog}):`, mammothError);
+                            // Keep the existing specific error for .doc files if mammoth was somehow still tried for them and failed in its typical way.
+                            if (fileName.endsWith('.doc') && mammothError.message.includes("Can't find end of central directory")) {
+                                extractedText = `[无法自动提取传统的 .doc 文件内容 (${fileName})，请尝试另存为 .docx 格式后重新上传。Mammoth 错误: ${mammothError.message}]`;
+                            } else {
+                                extractedText = `[提取 ${fileName} 内容失败: ${mammothError.message}]`;
+                            }
+                        }
                     } else if (mimeType === 'text/csv' || fileName.endsWith('.csv')) {
                         fileTypeForLog = 'CSV';
                         extractedText = buffer.toString('utf-8');
