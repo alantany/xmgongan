@@ -120,8 +120,8 @@ document.addEventListener('DOMContentLoaded', () => {
             messageId = sender + '-' + Date.now();
             messageElement = document.createElement('div');
             messageElement.id = messageId;
-            messageElement.classList.add('message', `${sender}-message`);
-
+        messageElement.classList.add('message', `${sender}-message`);
+        
             iconContainer = document.createElement('span');
             iconContainer.classList.add('message-icon');
             iconContainer.innerHTML = sender === 'user' ? userSvgIcon : aiSvgIcon;
@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
             messageElement.appendChild(textNodeP);
             
             if (chatArea) {
-                chatArea.appendChild(messageElement);
+        chatArea.appendChild(messageElement);
             } else {
                 console.error("Chat area not found for new message!");
                 return null;
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Manage 'ai-thinking' class correctly for new or updated messages
         if (sender === 'ai-thinking') {
             if (!messageElement.classList.contains('ai-thinking')) {
-                 messageElement.classList.add('ai-thinking');
+            messageElement.classList.add('ai-thinking');
             }
         } else {
             // If it's a normal AI message (not thinking), ensure thinking class is removed

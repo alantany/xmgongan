@@ -7,25 +7,41 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <h1>公安办案AI辅助分析系统</h1>
-        <p>北京联通</p>
-    </header>
-    <div class="container">
-        <main class="chat-area" id="chat-area">
-            <!-- Messages will appear here -->
-        </main>
-        <footer>
-            <div class="input-area">
-                <input type="file" id="file-upload-input" multiple accept=".txt,.pdf,.doc,.docx,.xls,.xlsx,.jpeg,.jpg,.png" style="display: none;">
-                <button id="upload-file-button" class="upload-btn">📎</button>
-                <input type="text" placeholder="输入消息...">
-                <button id="send-button">发送</button>
+    <div class="main-layout">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>公安办案</h1>
+                <h2>AI辅助分析系统</h2>
             </div>
-            <div id="selected-files-container" class="selected-files">
-                <!-- Selected files will be listed here -->
+            <div class="sidebar-description">
+                <p><strong>支持上传多种格式的文件进行分析处理</strong></p>
+                <ul class="file-type-details">
+                    <li>支持对包含文字的 .jpg, .png 图片进行文字识别和解析。</li>
+                    <li>支持 .txt, .pdf, .docx, .doc, .wps, .xlsx, .xls, .csv 等格式。</li>
+                    <li>支持批量上传多个文件进行分析。</li>
+                    <li>支持上传多个不同类型文件进行分析。</li>
+                </ul>
             </div>
-        </footer>
+            <div class="sidebar-footer">
+                <p>联通数科</p>
+            </div>
+        </aside>
+        <div class="chat-container">
+            <main class="chat-area" id="chat-area">
+                <!-- Messages will appear here -->
+            </main>
+            <footer>
+                <div class="input-area">
+                    <input type="file" id="file-upload-input" multiple accept=".txt,.pdf,.doc,.docx,.wps,.xls,.xlsx,.jpeg,.jpg,.png,.csv" style="display: none;">
+                    <button id="upload-file-button" class="upload-btn" title="上传文件">📎</button>
+                    <input type="text" placeholder="输入消息，Shift+Enter 换行...">
+                    <button id="send-button">发送</button>
+                </div>
+                <div id="selected-files-container" class="selected-files">
+                    <!-- Selected files will be listed here -->
+                </div>
+            </footer>
+        </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="script.js"></script>

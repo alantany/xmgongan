@@ -1,0 +1,17 @@
+# Node.js
+node_modules/
+
+# 日志
+*.log
+
+# 环境变量
+.env
+
+# VSCode
+.vscode/
+
+# Mac 系统文件
+.DS_Store
+
+# 不要上传模型配置
+server/models.json 

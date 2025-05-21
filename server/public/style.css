@@ -1,74 +1,143 @@
 body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-    background-color: #0B192F; /* 深蓝色背景 */
-    color: #E0E0E0; /* 浅色文字 */
+    background-color: #0a192f; /* 更深的整体背景色，接近示例图 */
+    color: #E0E0E0;
+    display: flex; /* 使用flex来支持main-layout的占据整个视口 */
+    min-height: 100vh;
+    overflow: hidden; /* 防止意外滚动条 */
+}
+
+.main-layout {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+
+.sidebar {
+    width: 320px; /* 左侧栏固定宽度，可根据内容调整 */
+    background-color: #0F203A; /* 左侧栏背景色，来自原.container */
+    padding: 40px 30px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh; /* 使用min-height确保内容溢出时页面可滚动 */
+    color: #cdd6f4; /* 统一左侧栏文字颜色，浅蓝色调 */
+    box-shadow: 2px 0 10px rgba(0,0,0,0.3); /* 给右边加一点阴影 */
+    overflow-y: auto; /* 如果内容过多允许滚动 */
+    text-align: center; /* 让内部块级元素默认居中对齐文本 */
 }
 
-.container {
+.sidebar-content-wrapper { /* 新增的包裹容器 */
+    flex-grow: 1; /* 占据除了页脚之外的剩余空间 */
     display: flex;
     flex-direction: column;
-    /* height: 100%; */ /* 移除，由下面的height/max-height控制 */
-    /* max-width: 100%; */ /* 移除，由下面的width/max-width控制 */
-    /* margin: 0 auto; */ /* 移除，body负责居中 */
-    width: 85vw; /* 容器宽度为视口宽度的65% */
-    max-width: 1240px; /* 最大宽度 */
-    height: 80vh; /* 容器高度为视口高度的80% */
-    max-height: 700px; /* 最大高度 */
-    background-color: #0F203A; /* 设置容器背景色，之前chat-area的颜色 */
-    border-radius: 12px; /* 为容器添加圆角 */
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35); /* 添加一些阴影以增加层次感 */
-    overflow: hidden; /* 确保子元素的边角不会超出容器的圆角 */
+    justify-content: center; /* 垂直居中 */
+    align-items: center; /* 水平居中 */
 }
 
-header {
-    width: 85vw;
-    max-width: 1240px;
-    text-align: center;
-    background: none;
-    margin-top: 40px;
-    margin-bottom: 30px;
-    padding: 0;
+.sidebar-header h1 {
+    font-size: 3em; /* 稍微调整主标题 */
+    font-weight: 600;
+    color: #FFFFFF; /* 主标题白色 */
+    margin-bottom: 5px; /* 调整主副标题间距 */
+    line-height: 1.2;
 }
 
-header h1 {
-    font-size: 2.5em;
-    color: #FFFFFF;
-    margin-bottom: 5px;
+.sidebar-header h2 {
+    font-size: 1.6em;
+    font-weight: 400;
+    color: #bac2de;
+    margin-top: 0px;
+    margin-bottom: 40px; /* 增加副标题和描述之间的间距 */
+    line-height: 1.3;
 }
 
-header p {
-    font-size: 1.1em;
-    color: #A0A0A0;
-    margin-top: 0;
+.sidebar-description {
+    margin-top: 0; /* 重置此处的margin-top，由h2的margin-bottom控制 */
+    text-align: left; /* 确保整个描述区域左对齐 */
+}
+
+.sidebar-description p strong { /* 针对加粗的摘要行 */
+    font-size: 0.9em;
+    line-height: 1.6;
+    color: #cdd6f4; /* 颜色与侧边栏统一，或略亮点 */
+    display: block; /* 让它占据一行，便于控制下方间距 */
+    margin-bottom: 15px; /* 与下方列表的间距 */
+}
+
+.sidebar-description p {
+    font-size: 0.90em; /* 描述文字大小调整 - 缩小 */
+    line-height: 1.6; /* 略微调整行高 */
+    color: #a6adc8;
+    margin-bottom: 10px; /* 略微调整间距 */
+    text-align: left;
+}
+
+.file-type-details {
+    list-style-type: none; /* 移除默认的项目符号 */
+    padding-left: 5px;   /* 稍微向左移动，以与上方文本对齐或自定义缩进 */
+    margin: 0; /* 移除ul的默认外边距 */
+}
+
+.file-type-details li {
+    font-size: 0.85em;
+    color: #a6adc8; /* 列表项颜色 */
+    margin-bottom: 8px; /* 列表项之间的间距 */
+    line-height: 1.5;
+    padding-left: 18px; /* 为自定义项目符号留出空间 */
+    position: relative; /* 用于自定义项目符号定位 */
+    text-indent: -0px; /* 根据自定义符号调整 */
+}
+
+.file-type-details li::before {
+    content: "▹"; /* 使用一个更美观的符号 */
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: #89b4fa; /* 项目符号颜色 */
+    font-size: 1em; /* 控制符号大小 */
+}
+
+.sidebar-footer {
+    margin-top: auto; /* 将页脚推向底部 */
+    padding-top: 20px; /* 页脚和内容之间的间距 */
+    width: 100%; /* 页脚宽度占满 */
+}
+
+.sidebar-footer p {
+    font-size: 0.85em; /* 页脚文字大小调整 */
+    color: #7f849c; /* 页脚文字颜色 */
+    text-align: center; /* 页脚文字居中对齐 */
+}
+
+.chat-container {
+    flex-grow: 1; /* 占据剩余空间 */
+    display: flex;
+    flex-direction: column;
+    background-color: #0a192f; /* 右侧聊天区背景色，与body一致 */
+    overflow: hidden; /* 防止内部元素溢出导致滚动条 */
+    height: 100vh; /* 确保聊天容器也占据整个视口高度 */
 }
 
 .chat-area {
     flex-grow: 1;
     overflow-y: auto;
-    padding: 20px;
-    background-color: #0F203A; /* 与container背景色一致 */
+    padding: 25px 30px; /* 聊天区域内边距调整 */
     display: flex;
     flex-direction: column;
 }
 
 footer {
-    padding: 15px 20px;
-    background-color: transparent; /* 背景透明，显示父容器颜色 */
-    border-top: 1px solid #1A2B47; 
+    padding: 15px 25px; /* 页脚内边距调整 */
+    background-color: #112240; /* 输入区域外部的页脚背景色，比聊天区稍亮一点 */
+    border-top: 1px solid #0d254c; /* 页脚上边框颜色 */
 }
 
 .input-area {
     display: flex;
     align-items: center;
-    background-color: #1E293B; /* 输入区域背景色 */
+    background-color: #1e293b; /* 输入区域背景色 */
     border-radius: 8px;
-    padding: 5px 10px;
+    padding: 8px 12px; /* 输入区域内边距调整 */
 }
 
 .input-area input[type="text"] {
@@ -88,90 +157,174 @@ footer {
 .input-area button {
     background-color: transparent; /* 按钮透明背景 */
     border: none;
-    color: #A0B3D1; /* 图标和文字颜色 */
+    color: #a0b3d1; /* 图标和文字颜色 */
     padding: 10px;
     cursor: pointer;
     margin-left: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: color 0.2s ease;
 }
 
-.input-area button.send-button {
-    background-color: #007BFF; /* 发送按钮蓝色背景 */
+.input-area button:hover {
+    color: #cad3f5;
+}
+
+.input-area button.upload-btn svg {
+    /* 如果需要调整上传按钮SVG的特定样式 */
+}
+
+.input-area button#send-button { /* 使用ID选择器以提高特异性 */
+    background-color: #1e66f5; /* 发送按钮蓝色背景，调整为更现代的蓝色 */
     color: #FFFFFF; /* 发送按钮白色文字 */
     border-radius: 6px;
     padding: 10px 20px; /* 发送按钮内边距 */
     font-size: 1em;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
 }
 
-.input-area button.send-button:hover {
-    background-color: #0056b3;
+.input-area button#send-button:hover {
+    background-color: #175dda; /* 鼠标悬停时颜色变深 */
 }
 
-.input-area button.mic-button svg {
-    width: 22px; /* 图标大小 */
-    height: 22px;
+/* 选中文件列表容器 */
+.selected-files {
+    padding: 10px 25px 5px 25px; /* 选中文件列表的内边距，与footer对齐 */
+    font-size: 0.9em;
 }
 
-/* 如果需要滚动条样式，可以添加 */
-.chat-area::-webkit-scrollbar {
-    width: 8px;
+.selected-files ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap; /* 允许文件换行 */
+    gap: 8px; /* 文件之间的间距 */
 }
 
-.chat-area::-webkit-scrollbar-track {
-    background: #0F203A;
-}
-
-.chat-area::-webkit-scrollbar-thumb {
-    background: #1A2B47;
+.selected-files li {
+    background-color: #2a3b5c;
+    padding: 5px 10px;
     border-radius: 4px;
+    display: flex;
+    align-items: center;
+    color: #bac2de;
 }
 
-.chat-area::-webkit-scrollbar-thumb:hover {
-    background: #2A3F5E;
+.selected-files li button {
+    background: none;
+    border: none;
+    color: #f08080; /* 移除按钮红色 */
+    margin-left: 8px;
+    cursor: pointer;
+    padding: 2px;
+    font-weight: bold;
+}
+.selected-files li button:hover {
+    color: #ff6060;
+}
+
+.toggle-file-list-btn {
+    background: none;
+    border: none;
+    color: #89b4fa; /* 蓝色调，用于"展开/收起"按钮 */
+    cursor: pointer;
+    margin-top: 5px;
+    padding: 5px 0;
+    display: block; /* 使其占据整行 */
+}
+.toggle-file-list-btn:hover {
+    text-decoration: underline;
 }
 
 /* 聊天消息样式 */
 .message {
     margin-bottom: 15px;
-    padding: 10px 15px;
-    border-radius: 18px;
-    max-width: 75%; /* Adjusted max-width slightly */
-    line-height: 1.4;
-    display: flex; /* Enable flexbox for icon and text alignment */
-    align-items: flex-start; /* Align items to the top */
+    padding: 12px 18px; /* 消息内边距调整 */
+    border-radius: 20px; /* 更大的圆角 */
+    max-width: 80%; 
+    line-height: 1.5;
+    display: flex; 
+    align-items: flex-start; 
 }
 
 .message .message-icon {
-    flex-shrink: 0; /* Prevent icon from shrinking */
-    /* SVG already has margin-right, width, height via inline style */
+    flex-shrink: 0; 
+    margin-top: 2px; /* 轻微调整图标垂直对齐 */
+    /* SVG icon styles are already applied inline in script.js, but can be overridden */
 }
 
 .message p {
     margin: 0;
-    word-wrap: break-word; /* Ensure long words break and wrap */
-    overflow-wrap: break-word; /* Ensure long words break and wrap - more modern */
-    flex-grow: 1; /* Allow text to take remaining space */
+    word-wrap: break-word; 
+    overflow-wrap: break-word; 
+    flex-grow: 1; 
+}
+
+/* 为Markdown渲染的内容设置一些基本样式 */
+.message p *:first-child {
+    margin-top: 0; /* 移除由Markdown生成的元素的顶部外边距 */
+}
+.message p *:last-child {
+    margin-bottom: 0; /* 移除由Markdown生成的元素的底部外边距 */
+}
+.message p ul, .message p ol {
+    padding-left: 20px; /* Markdown列表的内边距 */
+}
+.message p code {
+    background-color: rgba(0,0,0,0.2);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+}
+.message p pre {
+    background-color: rgba(0,0,0,0.2);
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto; /* 代码块水平滚动 */
+}
+.message p pre code {
+    padding: 0;
+    background-color: transparent;
 }
 
 .user-message {
-    background-color: #007BFF; /* 用户消息蓝色背景 */
-    color: #FFFFFF; /* 用户消息白色文字 */
+    background-color: #1e66f5; /* 用户消息蓝色背景，与发送按钮一致 */
+    color: #FFFFFF; 
     align-self: flex-end;
-    margin-left: auto; /* 消息靠右 */
-    border-bottom-right-radius: 5px; /* 调整圆角使其像聊天气泡 */
+    margin-left: auto; 
+    border-bottom-right-radius: 5px; 
 }
 
 .ai-message {
-    background-color: #343A40; /* AI消息深灰色背景 */
-    color: #E0E0E0; /* AI消息浅色文字 */
+    background-color: #2c3e50; /* AI消息更深的蓝灰色 */
+    color: #e0e6f7; 
     align-self: flex-start;
-    margin-right: auto; /* 消息靠左 */
-    border-bottom-left-radius: 5px; /* 调整圆角使其像聊天气泡 */
+    margin-right: auto; 
+    border-bottom-left-radius: 5px; 
 }
 
 .ai-thinking p{
-    color: #888;
+    color: #8c8c8c; /* 思考中文字颜色调整 */
     font-style: italic;
+}
+
+/* 滚动条样式 (可选，但为了美观) */
+.chat-area::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-area::-webkit-scrollbar-track {
+    background: transparent; /* 滚动条轨道背景透明 */
+}
+
+.chat-area::-webkit-scrollbar-thumb {
+    background: #2a3b5c; /* 滚动条滑块颜色 */
+    border-radius: 4px;
+}
+
+.chat-area::-webkit-scrollbar-thumb:hover {
+    background: #3a4f78; /* 鼠标悬停时滑块颜色 */
 } 
