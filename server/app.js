@@ -430,6 +430,10 @@ app.post('/api/relay', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+const HOST = '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+    console.log(`Server running at http://${HOST}:${PORT}`);
+    // 提示用户可以通过服务器的实际IP地址访问
+    console.log(`To access from other devices, use http://<your_server_ip>:${PORT} (replace <your_server_ip> with the server's actual IP address).`);
 }); 
