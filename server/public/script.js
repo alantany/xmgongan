@@ -4,7 +4,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const inputField = document.querySelector('.input-area input[type="text"]');
     const sendButton = document.getElementById('send-button');
-    const micButton = document.querySelector('.input-area .mic-button');
+    const micButton = document.getElementById('mic-button');
     const chatArea = document.getElementById('chat-area');
     const uploadFileButton = document.getElementById('upload-file-button');
     const fileUploadInput = document.getElementById('file-upload-input');
@@ -86,10 +86,98 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Example: Log when mic button is clicked
     if (micButton) {
-        micButton.addEventListener('click', () => {
-            console.log('Microphone button clicked');
-            // Implement voice input functionality here
-        });
+        // Web Speech API setup
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        const originalPlaceholder = inputField.placeholder; // Store original placeholder
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false; // Stop after first pause
+            recognition.lang = 'zh-CN'; // Set language to Chinese
+            recognition.interimResults = false; // Get final results
+            recognition.maxAlternatives = 1;
+
+            // Custom flag to track if recognition is active
+            let recognitionIsActive = false;
+
+            micButton.addEventListener('click', () => {
+                if (recognitionIsActive) {
+                    recognition.stop(); // Request to stop
+                    // UI updates (placeholder, button style) handled by onend or onerror
+                } else {
+                    try {
+                        inputField.value = ""; // Clear input field before starting
+                        inputField.placeholder = "正在聆听，请说话..."; // Immediate feedback
+                        micButton.classList.add('recording'); // Immediate visual feedback
+                        micButton.title = "停止录音";
+                        recognition.start();
+                        // Further UI updates will be handled by onstart if successful
+                    } catch (e) {
+                        console.error("Speech recognition start error immediately caught:", e);
+                        appendMessage("无法启动语音识别: " + e.message, 'ai');
+                        recognitionIsActive = false; // Ensure state is correct
+                        micButton.classList.remove('recording');
+                        micButton.title = "语音输入";
+                        inputField.placeholder = originalPlaceholder; // Restore placeholder on error
+                    }
+                }
+            });
+
+            recognition.onstart = () => {
+                console.log('Voice recognition actually started.');
+                recognitionIsActive = true;
+                // UI updated in click handler for immediate feedback, confirm here or adjust if needed
+                micButton.classList.add('recording');
+                micButton.title = "停止录音";
+                inputField.placeholder = "正在聆听，请说话...";
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                inputField.value = inputField.value ? inputField.value + ' ' + transcript : transcript;
+                inputField.focus(); // Focus on input field after transcript
+                // Placeholder will be restored by onend
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error', event.error);
+                let errorMessage = '语音识别发生错误';
+                if (event.error === 'no-speech') {
+                    errorMessage = '未检测到语音，请重试。';
+                } else if (event.error === 'audio-capture') {
+                    errorMessage = '无法捕获麦克风音频，请检查权限。';
+                } else if (event.error === 'not-allowed') {
+                    errorMessage = '麦克风权限未授予或被阻止。';
+                } else if (event.error === 'aborted') {
+                    errorMessage = '语音识别已中止。'; // Common if stopped manually or by short silence
+                } else if (event.error === 'network') {
+                    errorMessage = '语音识别网络错误。';
+                } else if (event.error === 'service-not-allowed') {
+                    errorMessage = '语音识别服务未授权。';
+                }
+                // Only show error in chat if it's not a simple abort or no-speech after a stop command
+                if (event.error !== 'aborted' && event.error !== 'no-speech') {
+                    appendMessage(errorMessage, 'ai');
+                }
+                // onend will also be called, so UI updates (placeholder, button) are handled there
+            };
+
+            recognition.onend = () => {
+                console.log('Voice recognition ended.');
+                recognitionIsActive = false;
+                micButton.classList.remove('recording');
+                micButton.title = "语音输入";
+                inputField.placeholder = originalPlaceholder; // Restore original placeholder
+            };
+            
+        } else {
+            micButton.disabled = true;
+            micButton.title = "浏览器不支持语音识别";
+            console.warn('Speech Recognition not supported by this browser.');
+            // Optionally inform the user that the feature is not available
+            // appendMessage('您的浏览器不支持语音识别功能。', 'ai');
+        }
     }
 
     // Function to append messages to the chat area

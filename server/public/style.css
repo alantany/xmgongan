@@ -171,6 +171,24 @@ footer {
     color: #cad3f5;
 }
 
+@keyframes pulse-red {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+}
+
+.input-area button.mic-btn.recording {
+    color: #ef4444; /* Red when recording */
+    animation: pulse-red 1.5s infinite;
+    border-radius: 50%; /* Make it circular for better pulse effect if icon is somewhat circular */
+}
+
 .input-area button.upload-btn svg {
     /* 如果需要调整上传按钮SVG的特定样式 */
 }
