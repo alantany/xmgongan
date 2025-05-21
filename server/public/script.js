@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Custom flag to track if recognition is active
             let recognitionIsActive = false;
 
-            micButton.addEventListener('click', () => {
+        micButton.addEventListener('click', () => {
                 if (recognitionIsActive) {
                     recognition.stop(); // Request to stop
                     // UI updates (placeholder, button style) handled by onend or onerror
@@ -435,20 +435,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                    // 'Accept': 'text/event-stream' // Front-end doesn't need to set this, backend does
                 },
                 body: JSON.stringify(requestBody)
             });
 
-            // Update the thinking/base message to "Receiving..."
-            // No longer calling removeThinking() here as we are updating the existing message.
             if (baseMessageId) {
-                appendMessage('正在接收AI回复...', 'ai', baseMessageId); // Update existing message to "Receiving..."
+                appendMessage('正在接收AI回复...', 'ai', baseMessageId);
             } else {
-                // Fallback if somehow baseMessageId wasn't passed, though it should be.
                 console.error("baseMessageId not provided to callOpenRouter");
-                removeThinking(); // Clear any old thinking messages
-                baseMessageId = appendMessage('正在接收AI回复...', 'ai'); // Create a new one
+                removeThinking();
+                baseMessageId = appendMessage('正在接收AI回复...', 'ai');
                 if (!baseMessageId) return;
             }
 
@@ -457,9 +453,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('API Relay Error:', response.status, errorText);
                 try {
                     const errorJson = JSON.parse(errorText);
-                    // Update the base message with the error
-                    appendMessage(`错误: ${errorJson.error || errorText}`, 'ai', baseMessageId);
-                } catch (e) {
+                    // Check if it's our specific file processing error from the backend
+                    if (errorJson.errorType === 'fileProcessingError') {
+                        appendMessage(errorJson.message || '一个或多个文件处理失败。', 'ai', baseMessageId);
+                    } else { // Other backend errors (LLM, config, etc.)
+                        appendMessage(`错误: ${errorJson.message || errorJson.error || errorText}`, 'ai', baseMessageId);
+                    }
+                } catch (e) { // If errorText is not JSON
                     appendMessage(`错误: ${errorText}`, 'ai', baseMessageId);
                 }
                 return; 
