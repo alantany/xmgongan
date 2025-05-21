@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let iconContainer;
 
         const userSvgIcon = `<svg viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px; margin-right: 8px;"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path></svg>`;
-        const aiSvgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 24px; height: 24px; margin-right: 8px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><path d="M12 17.5c2.07 0 3.75-1.68 3.75-3.75S14.07 10 12 10s-3.75 1.68-3.75 3.75S9.93 17.5 12 17.5zm0-6c.96 0 1.75.79 1.75 1.75S12.96 15 12 15s-1.75-.79-1.75-1.75S11.04 11.5 12 11.5z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/></svg>`;
+        const aiSvgIcon = `<svg width="24" height="24" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;"> <rect x="12" y="16" width="40" height="32" rx="8" fill="#4F46E5"/> <circle cx="24" cy="32" r="4" fill="white"/> <circle cx="40" cy="32" r="4" fill="white"/> <path d="M20 48c2 4 8 6 12 6s10-2 12-6" stroke="white" stroke-width="2" stroke-linecap="round"/> <path d="M32 10v6" stroke="#4F46E5" stroke-width="4" stroke-linecap="round"/> <circle cx="32" cy="10" r="4" fill="#4F46E5"/></svg>`;
 
         if (messageElement) { // Updating an existing message
             iconContainer = messageElement.querySelector('.message-icon'); // Icon should already exist
