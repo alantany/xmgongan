@@ -9,10 +9,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadFileButton = document.getElementById('upload-file-button');
     const fileUploadInput = document.getElementById('file-upload-input');
     const selectedFilesContainer = document.getElementById('selected-files-container');
+    const newConversationBtn = document.getElementById('new-conversation-btn');
 
     let selectedFiles = []; // Store selected files
     let isFileListExpanded = false; // Track if the full file list is shown
     const maxInitialFilesToShow = 2;
+    
+    // 对话历史记录，存储完整的消息历史
+    let conversationHistory = [];
+
+    // 新对话按钮事件处理
+    newConversationBtn?.addEventListener('click', () => {
+        // 清空对话历史
+        conversationHistory = [];
+        
+        // 清空聊天区域
+        chatArea.innerHTML = '';
+        
+        // 清空已选文件
+        selectedFiles = [];
+        renderSelectedFiles();
+        
+        // 清空输入框
+        inputField.value = '';
+        
+        console.log('已开始新对话，历史记录已清空');
+    });
 
     // Trigger file input click when upload button is clicked
     uploadFileButton.addEventListener('click', () => {
@@ -433,9 +455,18 @@ document.addEventListener('DOMContentLoaded', () => {
                  userMessageContentParts.push({ type: 'text', text: "[处理上传的文件]" });
             }
             
-            const messages = [{ role: 'user', content: userMessageContentParts }];
-            // Pass thinkingMessageId to fetchLLMReply, so it can be updated
-            await fetchLLMReply(activeModel, messages, fileAttachmentsForRequestBody, thinkingMessageId);
+            // 将当前用户消息添加到对话历史
+            const currentUserMessage = { role: 'user', content: userMessageContentParts };
+            conversationHistory.push(currentUserMessage);
+            
+            // 限制历史记录长度，避免超出上下文限制 (保留最近10轮对话)
+            const MAX_HISTORY_TURNS = 10;
+            if (conversationHistory.length > MAX_HISTORY_TURNS * 2) { // 每轮包含用户和AI消息
+                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+            }
+            
+            // 发送包含历史记录的完整消息
+            await fetchLLMReply(activeModel, conversationHistory, fileAttachmentsForRequestBody, thinkingMessageId);
             
             selectedFiles = []; // Clear files after sending
             renderSelectedFiles(); // Update UI
@@ -510,11 +541,43 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Check if it's our specific file processing error from the backend
                     if (errorJson.errorType === 'fileProcessingError') {
                         appendMessage(errorJson.message || '一个或多个文件处理失败。', 'ai', baseMessageId);
+                    } else if (errorJson.errorType === 'textTooLongError') {
+                        // 文本过长错误的特殊处理，显示更清晰的提示
+                        const currentLength = errorJson.currentLength || 0;
+                        const maxLength = errorJson.maxLength || 163840;
+                        const overageKB = Math.round((currentLength - maxLength) / 1024);
+                        
+                        let errorMsg = `⚠️ 文本内容过长，无法处理\n\n`;
+                        errorMsg += `📊 **当前文本长度**: ${currentLength.toLocaleString()} 字符\n`;
+                        errorMsg += `📏 **最大支持长度**: ${maxLength.toLocaleString()} 字符\n`;
+                        errorMsg += `📈 **超出长度**: ${(currentLength - maxLength).toLocaleString()} 字符 (约 ${overageKB}KB)\n\n`;
+                        errorMsg += `💡 **解决建议**:\n`;
+                        errorMsg += `• 减少上传的文件数量\n`;
+                        errorMsg += `• 选择较小的文件\n`;
+                        errorMsg += `• 将大文件分段处理\n`;
+                        errorMsg += `• 删除不必要的文件内容`;
+                        
+                        appendMessage(errorMsg, 'ai', baseMessageId);
+                    } else if (errorJson.errorType === 'llmError') {
+                        // 大模型API错误
+                        let llmErrorMsg = `🤖 大模型API错误\n\n`;
+                        if (errorJson.error && errorJson.error.message) {
+                            llmErrorMsg += `**错误信息**: ${errorJson.error.message}\n`;
+                        } else if (errorJson.message) {
+                            llmErrorMsg += `**错误信息**: ${errorJson.message}\n`;
+                        }
+                        if (errorJson.error && errorJson.error.code) {
+                            llmErrorMsg += `**错误代码**: ${errorJson.error.code}\n`;
+                        }
+                        appendMessage(llmErrorMsg, 'ai', baseMessageId);
+                    } else if (errorJson.errorType === 'configError') {
+                        // 配置错误
+                        appendMessage(`⚙️ 配置错误: ${errorJson.message || '模型配置有误'}`, 'ai', baseMessageId);
                     } else { // Other backend errors (LLM, config, etc.)
-                        appendMessage(`错误: ${errorJson.message || errorJson.error || errorText}`, 'ai', baseMessageId);
+                        appendMessage(`❌ 系统错误: ${errorJson.message || errorJson.error || '未知错误'}`, 'ai', baseMessageId);
                     }
                 } catch (e) { // If errorText is not JSON
-                    appendMessage(`错误: ${errorText}`, 'ai', baseMessageId);
+                    appendMessage(`❌ 服务器错误: ${errorText}`, 'ai', baseMessageId);
                 }
                 return; 
             }
@@ -543,6 +606,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (done) {
                         clearInterval(ellipsisInterval); 
                         appendMessage(accumulatedResponse, 'ai', baseMessageId);
+                        
+                        // 将AI回复添加到对话历史
+                        if (accumulatedResponse && accumulatedResponse.trim()) {
+                            conversationHistory.push({ 
+                                role: 'assistant', 
+                                content: accumulatedResponse.trim() 
+                            });
+                        }
                         return;
                     }
 
@@ -556,16 +627,55 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (jsonStr.trim() === '[DONE]') {
                                 clearInterval(ellipsisInterval);
                                 appendMessage(accumulatedResponse, 'ai', baseMessageId); // Final update
+                                
+                                // 将AI回复添加到对话历史
+                                if (accumulatedResponse && accumulatedResponse.trim()) {
+                                    conversationHistory.push({ 
+                                        role: 'assistant', 
+                                        content: accumulatedResponse.trim() 
+                                    });
+                                }
                                 return;
                             }
                             try {
                                 const parsed = JSON.parse(jsonStr);
+                                
+                                // 检查是否有错误响应
+                                if (parsed.error) {
+                                    clearInterval(ellipsisInterval);
+                                    let errorMsg = `🤖 大模型返回错误\n\n`;
+                                    if (parsed.error.message) {
+                                        errorMsg += `**错误信息**: ${parsed.error.message}\n`;
+                                    }
+                                    if (parsed.error.code) {
+                                        errorMsg += `**错误代码**: ${parsed.error.code}\n`;
+                                    }
+                                    if (parsed.error.type) {
+                                        errorMsg += `**错误类型**: ${parsed.error.type}\n`;
+                                    }
+                                    appendMessage(errorMsg, 'ai', baseMessageId);
+                                    return;
+                                }
+                                
+                                // 处理特殊的processed_user_message，更新对话历史中的用户消息
+                                if (parsed.type === 'processed_user_message') {
+                                    // 找到最后一条用户消息并替换为处理后的完整内容
+                                    for (let i = conversationHistory.length - 1; i >= 0; i--) {
+                                        if (conversationHistory[i].role === 'user') {
+                                            conversationHistory[i] = parsed.message;
+                                            break;
+                                        }
+                                    }
+                                    console.log('已更新对话历史中的用户消息，包含完整文件内容');
+                                    continue; // 跳过这个特殊消息的其他处理
+                                }
+                                
                                 if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
                                     accumulatedResponse += parsed.choices[0].delta.content;
                                     hasNewContent = true; 
                                 }
                             } catch (e) {
-                                // console.warn('Error parsing stream JSON:', jsonStr, e);
+                                console.warn('Error parsing stream JSON:', jsonStr, e);
                             }
                         }
                     }

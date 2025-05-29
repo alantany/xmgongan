@@ -413,6 +413,20 @@ app.post('/api/relay', async (req, res) => {
              return res.status(400).json({ errorType: 'emptyMessageError', message: '不能发送空消息或仅包含无法处理的文件。' });
         }
 
+        // 检查文本长度是否超过大模型上下文限制 (128K tokens ≈ 163840 字符)
+        const MAX_CONTEXT_LENGTH = 163840;
+        if (finalUserContentForLLM.length > MAX_CONTEXT_LENGTH) {
+            console.log(`Text too long: ${finalUserContentForLLM.length} characters (max: ${MAX_CONTEXT_LENGTH})`);
+            return res.status(400).json({ 
+                errorType: 'textTooLongError', 
+                message: `文本内容过长 (${finalUserContentForLLM.length} 字符)，超出大模型处理限制 (${MAX_CONTEXT_LENGTH} 字符)。请减少文件数量或文件大小后重试。`,
+                currentLength: finalUserContentForLLM.length,
+                maxLength: MAX_CONTEXT_LENGTH
+            });
+        }
+
+        console.log(`Sending to LLM: ${finalUserContentForLLM.length} characters`);
+        
         const messagesForLLM = [{ role: 'user', content: finalUserContentForLLM }];
         const requestBodyForLLM = { ...req.body, messages: messagesForLLM, stream: true };
         delete requestBodyForLLM.attachments;
@@ -426,6 +440,8 @@ app.post('/api/relay', async (req, res) => {
             },
             body: JSON.stringify(requestBodyForLLM)
         });
+
+        console.log(`LLM API Response Status: ${llmResponse.status} ${llmResponse.statusText}`);
 
         if (!llmResponse.ok) {
             const errorText = await llmResponse.text();
@@ -442,6 +458,16 @@ app.post('/api/relay', async (req, res) => {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
+
+        // 首先发送处理后的完整用户消息，供前端更新对话历史
+        const processedUserMessage = { 
+            role: 'user', 
+            content: finalUserContentForLLM 
+        };
+        res.write(`data: ${JSON.stringify({ 
+            type: 'processed_user_message', 
+            message: processedUserMessage 
+        })}\n\n`);
 
         llmResponse.body.pipe(res); // Simplifies piping the stream
         
