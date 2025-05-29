@@ -294,17 +294,69 @@ app.post('/api/relay', async (req, res) => {
                         }
                     } else if (mimeType.startsWith('image/')) {
                         fileTypeForLog = 'Image (OCR)';
-                        const worker = await Tesseract.createWorker({});
+                        let worker = null;
                         try {
-                            await worker.loadLanguage(['eng', 'chi_sim']); 
-                            await worker.initialize(); 
-                            const { data: { text: ocrText } } = await worker.recognize(buffer);
-                            extractedText = ocrText;
+                            // 创建OCR worker
+                            worker = await Tesseract.createWorker({
+                                logger: m => console.log('[Tesseract]', m) // 添加日志
+                            });
+                            
+                            // 加载中文简体和英文语言包
+                            await worker.loadLanguage('chi_sim+eng');
+                            await worker.initialize('chi_sim+eng');
+                            
+                            // 设置OCR参数以提高中文识别准确率
+                            await worker.setParameters({
+                                'preserve_interword_spaces': '1', // 保持词间空格
+                                'tessedit_pageseg_mode': '1', // 使用自动页面分割
+                                'tessedit_ocr_engine_mode': '1', // 使用神经网络引擎
+                            });
+                            
+                            console.log(`Starting OCR for image: ${attachment.filename}`);
+                            
+                            // 进行OCR识别
+                            const { data: { text: ocrText, confidence } } = await worker.recognize(buffer);
+                            
+                            console.log(`OCR completed for ${attachment.filename}, confidence: ${confidence}`);
+                            
+                            if (ocrText && ocrText.trim().length > 0) {
+                                // 清理OCR结果，移除多余的空白字符
+                                extractedText = ocrText
+                                    .replace(/\n{3,}/g, '\n\n') // 替换多个换行为双换行
+                                    .replace(/\s{2,}/g, ' ') // 替换多个空格为单空格
+                                    .trim();
+                                
+                                // 如果置信度太低，添加提示
+                                if (confidence < 60) {
+                                    extractedText = `[OCR识别置信度较低(${confidence.toFixed(1)}%)，结果可能不准确]\n\n${extractedText}`;
+                                }
+                            } else {
+                                extractedText = `[文件处理提示：图片 '${attachment.filename}' OCR识别结果为空，可能图片中没有文字或文字无法识别。]`;
+                            }
+                            
                         } catch (ocrError) {
                             console.error(`Error during OCR for ${fileName}:`, ocrError);
-                            extractedText = `[文件处理错误：对图片 '${attachment.filename}' 进行OCR识别失败。详情: ${ocrError.message}]`;
+                            
+                            // 更详细的错误信息
+                            let errorMessage = ocrError.message || '未知OCR错误';
+                            if (errorMessage.includes('language')) {
+                                errorMessage = 'OCR语言包加载失败，请检查服务器配置';
+                            } else if (errorMessage.includes('worker')) {
+                                errorMessage = 'OCR工作进程创建失败';
+                            } else if (errorMessage.includes('timeout')) {
+                                errorMessage = 'OCR识别超时，图片可能过大或过于复杂';
+                            }
+                            
+                            extractedText = `[文件处理错误：对图片 '${attachment.filename}' 进行OCR识别失败。详情: ${errorMessage}]`;
                         } finally {
-                            await worker.terminate(); 
+                            // 确保worker被正确关闭
+                            if (worker) {
+                                try {
+                                    await worker.terminate();
+                                } catch (terminateError) {
+                                    console.error('Error terminating OCR worker:', terminateError);
+                                }
+                            }
                         }
                     } else {
                         fileTypeForLog = 'Unsupported';
