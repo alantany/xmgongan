@@ -22,8 +22,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle file selection
     fileUploadInput.addEventListener('change', (event) => {
-        selectedFiles = Array.from(event.target.files);
-        isFileListExpanded = false; // Reset expanded state on new selection
+        const newFiles = Array.from(event.target.files);
+        let addedCount = 0;
+        let duplicateCount = 0;
+        
+        // 追加新文件到已选文件列表，并去重（基于文件名和大小）
+        newFiles.forEach(newFile => {
+            // 检查是否已存在相同的文件（通过文件名和大小判断）
+            const isDuplicate = selectedFiles.some(existingFile => 
+                existingFile.name === newFile.name && 
+                existingFile.size === newFile.size
+            );
+            
+            if (!isDuplicate) {
+                selectedFiles.push(newFile);
+                addedCount++;
+            } else {
+                duplicateCount++;
+            }
+        });
+        
+        // 给用户友好的提示
+        if (duplicateCount > 0 && addedCount > 0) {
+            console.log(`添加了 ${addedCount} 个新文件，跳过了 ${duplicateCount} 个重复文件`);
+        } else if (duplicateCount > 0 && addedCount === 0) {
+            console.log(`所选的 ${duplicateCount} 个文件已存在，未添加任何新文件`);
+        } else if (addedCount > 0) {
+            console.log(`成功添加了 ${addedCount} 个文件`);
+        }
+        
+        // 如果有新文件被添加，重置展开状态
+        if (newFiles.length > 0) {
+            isFileListExpanded = false;
+        }
+        
         renderSelectedFiles();
         fileUploadInput.value = ''; // Reset file input to allow re-selecting the same file
     });
@@ -34,6 +66,28 @@ document.addEventListener('DOMContentLoaded', () => {
             isFileListExpanded = false; // Ensure state is reset if no files
             return;
         }
+
+        // 添加文件数量和清空按钮的标题栏
+        const headerDiv = document.createElement('div');
+        headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 4px 8px; background: rgba(79, 70, 229, 0.1); border-radius: 4px;';
+        
+        const fileCountSpan = document.createElement('span');
+        fileCountSpan.textContent = `已选择 ${selectedFiles.length} 个文件`;
+        fileCountSpan.style.cssText = 'font-size: 14px; color: #4F46E5; font-weight: 500;';
+        
+        const clearAllBtn = document.createElement('button');
+        clearAllBtn.textContent = '清空所有';
+        clearAllBtn.style.cssText = 'padding: 2px 8px; font-size: 12px; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer;';
+        clearAllBtn.title = '清空所有已选文件';
+        clearAllBtn.onclick = () => {
+            selectedFiles.length = 0; // 清空数组
+            isFileListExpanded = false;
+            renderSelectedFiles();
+        };
+        
+        headerDiv.appendChild(fileCountSpan);
+        headerDiv.appendChild(clearAllBtn);
+        selectedFilesContainer.appendChild(headerDiv);
 
         const list = document.createElement('ul');
         const filesToRender = isFileListExpanded ? selectedFiles : selectedFiles.slice(0, maxInitialFilesToShow);
