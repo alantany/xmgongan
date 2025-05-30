@@ -18,8 +18,195 @@ document.addEventListener('DOMContentLoaded', () => {
     // 对话历史记录，存储完整的消息历史
     let conversationHistory = [];
 
+    // 智能上下文长度管理函数
+    function estimateTokens(text) {
+        // 粗略估算：中文字符约1-2个token，英文单词约1.3个token，标点和空格约0.3个token
+        if (typeof text !== 'string') return 0;
+        
+        const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+        const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
+        const otherChars = text.length - chineseChars - englishWords;
+        
+        return Math.ceil(chineseChars * 1.5 + englishWords * 1.3 + otherChars * 0.3);
+    }
+
+    function getMessageTokenCount(message) {
+        if (typeof message.content === 'string') {
+            return estimateTokens(message.content);
+        } else if (Array.isArray(message.content)) {
+            return message.content.reduce((total, part) => {
+                if (part.type === 'text') {
+                    return total + estimateTokens(part.text || '');
+                }
+                return total;
+            }, 0);
+        }
+        return 0;
+    }
+
+    function getTotalTokens(messages) {
+        return messages.reduce((total, msg) => total + getMessageTokenCount(msg), 0);
+    }
+
+    function manageContextLength(history, maxTokens) {
+        if (history.length === 0) return history;
+        
+        let totalTokens = getTotalTokens(history);
+        console.log(`当前对话历史token数: ${totalTokens}, 最大限制: ${maxTokens}`);
+        
+        if (totalTokens <= maxTokens) {
+            return history;
+        }
+        
+        // 计算需要删除的token数量
+        const tokensToRemove = totalTokens - maxTokens;
+        console.log(`需要删除约 ${tokensToRemove} tokens`);
+        
+        // 新策略：确保最新对话优先级最高，避免被文件内容"绑架"
+        const messageAnalysis = history.map((msg, idx) => {
+            const tokens = getMessageTokenCount(msg);
+            const isFileMessage = isMessageContainingFile(msg);
+            const distanceFromEnd = history.length - 1 - idx; // 0表示最新消息
+            
+            // 重新设计优先级：距离当前越近优先级越高
+            let priority;
+            if (distanceFromEnd === 0) {
+                // 最新用户问题：绝对最高优先级
+                priority = 10;
+            } else if (distanceFromEnd === 1) {
+                // 最新AI回复：次高优先级
+                priority = 9;
+            } else if (distanceFromEnd <= 3) {
+                // 最近2轮对话：高优先级
+                priority = 8;
+            } else if (isFileMessage) {
+                // 文件消息：中等优先级（重要但不能压过新问题）
+                priority = 5;
+            } else {
+                // 普通历史对话：低优先级
+                priority = 1;
+            }
+            
+            return {
+                index: idx,
+                message: msg,
+                tokens: tokens,
+                isFileMessage: isFileMessage,
+                distanceFromEnd: distanceFromEnd,
+                priority: priority,
+                role: msg.role
+            };
+        });
+        
+        console.log('消息优先级分析:', messageAnalysis.map(m => 
+            `${m.role}:${m.tokens}tokens(距今${m.distanceFromEnd}步,${m.isFileMessage ? '文件' : '对话'},优先级${m.priority})`
+        ).join(', '));
+        
+        // 按优先级排序，优先级低的先删除，但绝对保护最新2条消息
+        const absoluteProtectionCount = Math.min(2, history.length); // 绝对保护最新2条
+        const sortedForDeletion = messageAnalysis
+            .filter(m => m.distanceFromEnd >= absoluteProtectionCount) // 绝对保护最新消息
+            .sort((a, b) => a.priority - b.priority); // 优先级低的排前面
+        
+        let newHistory = [...history];
+        let removedTokens = 0;
+        
+        // 智能删除策略：确保最新问题不被历史内容干扰
+        for (const analysis of sortedForDeletion) {
+            if (getTotalTokens(newHistory) <= maxTokens) {
+                break; // 已经达到目标
+            }
+            
+            // 如果是文件消息，采用更严格的条件
+            if (analysis.isFileMessage) {
+                const currentOverage = getTotalTokens(newHistory) - maxTokens;
+                const fileToTextRatio = analysis.tokens / totalTokens;
+                
+                // 如果单个文件消息占比过大（>30%），或者超限严重（>15K），才删除
+                if (currentOverage > 15000 || fileToTextRatio > 0.3) {
+                    console.warn(`删除大文件消息: ${analysis.tokens} tokens (占比${(fileToTextRatio*100).toFixed(1)}%, 当前超限${currentOverage})`);
+                } else {
+                    console.log(`保护文件消息: ${analysis.tokens} tokens，当前超限${currentOverage}不足以删除`);
+                    continue;
+                }
+            }
+            
+            // 删除这条消息
+            const messageIndex = newHistory.findIndex(m => m === analysis.message);
+            if (messageIndex !== -1) {
+                newHistory.splice(messageIndex, 1);
+                removedTokens += analysis.tokens;
+                console.log(`删除${analysis.isFileMessage ? '文件' : '对话'}消息(距今${analysis.distanceFromEnd}步): ${analysis.tokens} tokens，累计删除: ${removedTokens} tokens`);
+            }
+        }
+        
+        const finalTokens = getTotalTokens(newHistory);
+        console.log(`智能上下文管理完成 - 删除: ${removedTokens} tokens, 剩余: ${finalTokens} tokens, 保留: ${newHistory.length} 条消息`);
+        
+        // 分析最终保留的消息分布
+        const finalFileMessages = newHistory.filter(msg => isMessageContainingFile(msg)).length;
+        const recentMessages = newHistory.filter((msg, idx) => newHistory.length - 1 - idx < 4).length;
+        console.log(`最终保留: ${finalFileMessages} 条文件消息, ${recentMessages} 条最近对话`);
+        
+        // 检查是否有效保护了最新用户问题
+        if (newHistory.length > 0) {
+            const latestMessage = newHistory[newHistory.length - 1];
+            if (latestMessage.role === 'user') {
+                console.log(`✓ 最新用户问题已保护，内容: "${getMessagePreview(latestMessage)}"`);
+            }
+        }
+        
+        // 如果还是超限，给出详细警告
+        if (finalTokens > maxTokens) {
+            console.warn(`警告：即使智能删除后仍超出限制 ${finalTokens - maxTokens} tokens`);
+            console.warn('建议用户减少文件数量或将大文件分段处理');
+        }
+        
+        return newHistory;
+    }
+
+    // 获取消息预览的辅助函数
+    function getMessagePreview(message) {
+        if (typeof message.content === 'string') {
+            return message.content.substring(0, 50) + (message.content.length > 50 ? '...' : '');
+        } else if (Array.isArray(message.content)) {
+            const textPart = message.content.find(part => part.type === 'text');
+            if (textPart && textPart.text) {
+                return textPart.text.substring(0, 50) + (textPart.text.length > 50 ? '...' : '');
+            }
+        }
+        return '[消息内容无法预览]';
+    }
+
+    // 判断消息是否包含文件内容的辅助函数
+    function isMessageContainingFile(message) {
+        if (typeof message.content === 'string') {
+            // 检查是否包含文件内容标记
+            return message.content.includes('--- Content from file:') || 
+                   message.content.includes('[用户上传了文件:') ||
+                   message.content.includes('[用户上传了图片:') ||
+                   message.content.includes('--- BEGIN FILE:');
+        } else if (Array.isArray(message.content)) {
+            // 检查content数组中是否有文件相关内容
+            return message.content.some(part => {
+                if (part.type === 'text' && part.text) {
+                    return part.text.includes('--- Content from file:') || 
+                           part.text.includes('[用户上传了文件:') ||
+                           part.text.includes('[用户上传了图片:') ||
+                           part.text.includes('--- BEGIN FILE:');
+                }
+                return false;
+            });
+        }
+        return false;
+    }
+
     // 新对话按钮事件处理
     newConversationBtn?.addEventListener('click', () => {
+        // 显示当前对话统计
+        const totalTokens = getTotalTokens(conversationHistory);
+        const messageCount = conversationHistory.length;
+        
         // 清空对话历史
         conversationHistory = [];
         
@@ -33,7 +220,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // 清空输入框
         inputField.value = '';
         
-        console.log('已开始新对话，历史记录已清空');
+        console.log(`已开始新对话。清空了 ${messageCount} 条消息，约 ${totalTokens} 个token`);
+        
+        // 在聊天区域显示欢迎信息
+        if (messageCount > 0) {
+            appendMessage(`🔄 已开始新对话\n\n清空了 ${messageCount} 条历史消息 (约 ${totalTokens.toLocaleString()} tokens)\n\n可以重新上传文件或提问了！`, 'ai');
+        }
     });
 
     // Trigger file input click when upload button is clicked
@@ -459,11 +651,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentUserMessage = { role: 'user', content: userMessageContentParts };
             conversationHistory.push(currentUserMessage);
             
-            // 限制历史记录长度，避免超出上下文限制 (保留最近10轮对话)
-            const MAX_HISTORY_TURNS = 10;
-            if (conversationHistory.length > MAX_HISTORY_TURNS * 2) { // 每轮包含用户和AI消息
-                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
-            }
+            // 智能上下文管理：基于token数量而不是轮数
+            const MAX_CONTEXT_TOKENS = 120000; // 保留一些余量，不用满128K
+            conversationHistory = manageContextLength(conversationHistory, MAX_CONTEXT_TOKENS);
             
             // 发送包含历史记录的完整消息
             await fetchLLMReply(activeModel, conversationHistory, fileAttachmentsForRequestBody, thinkingMessageId);
