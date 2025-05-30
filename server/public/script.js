@@ -17,196 +17,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 对话历史记录，存储完整的消息历史
     let conversationHistory = [];
-
-    // 智能上下文长度管理函数
-    function estimateTokens(text) {
-        // 粗略估算：中文字符约1-2个token，英文单词约1.3个token，标点和空格约0.3个token
-        if (typeof text !== 'string') return 0;
-        
-        const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
-        const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
-        const otherChars = text.length - chineseChars - englishWords;
-        
-        return Math.ceil(chineseChars * 1.5 + englishWords * 1.3 + otherChars * 0.3);
-    }
-
-    function getMessageTokenCount(message) {
-        if (typeof message.content === 'string') {
-            return estimateTokens(message.content);
-        } else if (Array.isArray(message.content)) {
-            return message.content.reduce((total, part) => {
-                if (part.type === 'text') {
-                    return total + estimateTokens(part.text || '');
-                }
-                return total;
-            }, 0);
-        }
-        return 0;
-    }
-
-    function getTotalTokens(messages) {
-        return messages.reduce((total, msg) => total + getMessageTokenCount(msg), 0);
-    }
-
-    function manageContextLength(history, maxTokens) {
-        if (history.length === 0) return history;
-        
-        let totalTokens = getTotalTokens(history);
-        console.log(`当前对话历史token数: ${totalTokens}, 最大限制: ${maxTokens}`);
-        
-        if (totalTokens <= maxTokens) {
-            return history;
-        }
-        
-        // 计算需要删除的token数量
-        const tokensToRemove = totalTokens - maxTokens;
-        console.log(`需要删除约 ${tokensToRemove} tokens`);
-        
-        // 新策略：确保最新对话优先级最高，避免被文件内容"绑架"
-        const messageAnalysis = history.map((msg, idx) => {
-            const tokens = getMessageTokenCount(msg);
-            const isFileMessage = isMessageContainingFile(msg);
-            const distanceFromEnd = history.length - 1 - idx; // 0表示最新消息
-            
-            // 重新设计优先级：距离当前越近优先级越高
-            let priority;
-            if (distanceFromEnd === 0) {
-                // 最新用户问题：绝对最高优先级
-                priority = 10;
-            } else if (distanceFromEnd === 1) {
-                // 最新AI回复：次高优先级
-                priority = 9;
-            } else if (distanceFromEnd <= 3) {
-                // 最近2轮对话：高优先级
-                priority = 8;
-            } else if (isFileMessage) {
-                // 文件消息：中等优先级（重要但不能压过新问题）
-                priority = 5;
-            } else {
-                // 普通历史对话：低优先级
-                priority = 1;
-            }
-            
-            return {
-                index: idx,
-                message: msg,
-                tokens: tokens,
-                isFileMessage: isFileMessage,
-                distanceFromEnd: distanceFromEnd,
-                priority: priority,
-                role: msg.role
-            };
-        });
-        
-        console.log('消息优先级分析:', messageAnalysis.map(m => 
-            `${m.role}:${m.tokens}tokens(距今${m.distanceFromEnd}步,${m.isFileMessage ? '文件' : '对话'},优先级${m.priority})`
-        ).join(', '));
-        
-        // 按优先级排序，优先级低的先删除，但绝对保护最新2条消息
-        const absoluteProtectionCount = Math.min(2, history.length); // 绝对保护最新2条
-        const sortedForDeletion = messageAnalysis
-            .filter(m => m.distanceFromEnd >= absoluteProtectionCount) // 绝对保护最新消息
-            .sort((a, b) => a.priority - b.priority); // 优先级低的排前面
-        
-        let newHistory = [...history];
-        let removedTokens = 0;
-        
-        // 智能删除策略：确保最新问题不被历史内容干扰
-        for (const analysis of sortedForDeletion) {
-            if (getTotalTokens(newHistory) <= maxTokens) {
-                break; // 已经达到目标
-            }
-            
-            // 如果是文件消息，采用更严格的条件
-            if (analysis.isFileMessage) {
-                const currentOverage = getTotalTokens(newHistory) - maxTokens;
-                const fileToTextRatio = analysis.tokens / totalTokens;
-                
-                // 如果单个文件消息占比过大（>30%），或者超限严重（>15K），才删除
-                if (currentOverage > 15000 || fileToTextRatio > 0.3) {
-                    console.warn(`删除大文件消息: ${analysis.tokens} tokens (占比${(fileToTextRatio*100).toFixed(1)}%, 当前超限${currentOverage})`);
-                } else {
-                    console.log(`保护文件消息: ${analysis.tokens} tokens，当前超限${currentOverage}不足以删除`);
-                    continue;
-                }
-            }
-            
-            // 删除这条消息
-            const messageIndex = newHistory.findIndex(m => m === analysis.message);
-            if (messageIndex !== -1) {
-                newHistory.splice(messageIndex, 1);
-                removedTokens += analysis.tokens;
-                console.log(`删除${analysis.isFileMessage ? '文件' : '对话'}消息(距今${analysis.distanceFromEnd}步): ${analysis.tokens} tokens，累计删除: ${removedTokens} tokens`);
-            }
-        }
-        
-        const finalTokens = getTotalTokens(newHistory);
-        console.log(`智能上下文管理完成 - 删除: ${removedTokens} tokens, 剩余: ${finalTokens} tokens, 保留: ${newHistory.length} 条消息`);
-        
-        // 分析最终保留的消息分布
-        const finalFileMessages = newHistory.filter(msg => isMessageContainingFile(msg)).length;
-        const recentMessages = newHistory.filter((msg, idx) => newHistory.length - 1 - idx < 4).length;
-        console.log(`最终保留: ${finalFileMessages} 条文件消息, ${recentMessages} 条最近对话`);
-        
-        // 检查是否有效保护了最新用户问题
-        if (newHistory.length > 0) {
-            const latestMessage = newHistory[newHistory.length - 1];
-            if (latestMessage.role === 'user') {
-                console.log(`✓ 最新用户问题已保护，内容: "${getMessagePreview(latestMessage)}"`);
-            }
-        }
-        
-        // 如果还是超限，给出详细警告
-        if (finalTokens > maxTokens) {
-            console.warn(`警告：即使智能删除后仍超出限制 ${finalTokens - maxTokens} tokens`);
-            console.warn('建议用户减少文件数量或将大文件分段处理');
-        }
-        
-        return newHistory;
-    }
-
-    // 获取消息预览的辅助函数
-    function getMessagePreview(message) {
-        if (typeof message.content === 'string') {
-            return message.content.substring(0, 50) + (message.content.length > 50 ? '...' : '');
-        } else if (Array.isArray(message.content)) {
-            const textPart = message.content.find(part => part.type === 'text');
-            if (textPart && textPart.text) {
-                return textPart.text.substring(0, 50) + (textPart.text.length > 50 ? '...' : '');
-            }
-        }
-        return '[消息内容无法预览]';
-    }
-
-    // 判断消息是否包含文件内容的辅助函数
-    function isMessageContainingFile(message) {
-        if (typeof message.content === 'string') {
-            // 检查是否包含文件内容标记
-            return message.content.includes('--- Content from file:') || 
-                   message.content.includes('[用户上传了文件:') ||
-                   message.content.includes('[用户上传了图片:') ||
-                   message.content.includes('--- BEGIN FILE:');
-        } else if (Array.isArray(message.content)) {
-            // 检查content数组中是否有文件相关内容
-            return message.content.some(part => {
-                if (part.type === 'text' && part.text) {
-                    return part.text.includes('--- Content from file:') || 
-                           part.text.includes('[用户上传了文件:') ||
-                           part.text.includes('[用户上传了图片:') ||
-                           part.text.includes('--- BEGIN FILE:');
-                }
-                return false;
-            });
-        }
-        return false;
-    }
+    
+    // 当前会话的文件内容，作为可选参考资料保留
+    let sessionFileContent = null;
 
     // 新对话按钮事件处理
     newConversationBtn?.addEventListener('click', () => {
-        // 显示当前对话统计
-        const totalTokens = getTotalTokens(conversationHistory);
-        const messageCount = conversationHistory.length;
-        
         // 清空对话历史
         conversationHistory = [];
         
@@ -220,12 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 清空输入框
         inputField.value = '';
         
-        console.log(`已开始新对话。清空了 ${messageCount} 条消息，约 ${totalTokens} 个token`);
-        
-        // 在聊天区域显示欢迎信息
-        if (messageCount > 0) {
-            appendMessage(`🔄 已开始新对话\n\n清空了 ${messageCount} 条历史消息 (约 ${totalTokens.toLocaleString()} tokens)\n\n可以重新上传文件或提问了！`, 'ai');
-        }
+        console.log('已开始新对话，历史记录已清空');
     });
 
     // Trigger file input click when upload button is clicked
@@ -532,15 +343,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const userInput = inputField.value.trim();
-        // Allow sending message if there is text input or files selected
+        // 允许有文本输入或选择了文件时发送消息
         if (!userInput && selectedFiles.length === 0) return;
 
-        // Use placeholder if input is empty but files are present
-        const displayUserMessage = userInput || (selectedFiles.length > 0 ? "[发送文件中...]" : "");
-        if(displayUserMessage) appendMessage(displayUserMessage, 'user');
-        
+        // 显示用户消息（如果只有文件没有文本，显示占位符）
+        const displayUserMessage = userInput || (selectedFiles.length > 0 ? "[上传文件...]" : "");
+        appendMessage(displayUserMessage, 'user');
         inputField.value = '';
-        // Create thinking message and store its ID
+        
+        // 创建思考消息
         const thinkingMessageId = appendMessage('AI正在思考...', 'ai-thinking'); 
 
         try {
@@ -551,18 +362,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            let userMessageContentParts = [];
-            if (userInput) {
-                userMessageContentParts.push({ type: 'text', text: userInput });
-            }
+            // 处理文件上传
+            let fileAttachmentsForRequestBody = [];
+            let textFileCombinedContent = "";
             
-            const fileAttachmentsForRequestBody = []; // For non-image base64 data for 'attachments' field
-
             if (selectedFiles.length > 0) {
                 const filePromises = selectedFiles.map(file => {
                     return new Promise((resolve, reject) => {
                         const reader = new FileReader();
-                        reader.onload = () => resolve({ name: file.name, type: file.type, content: reader.result, file_obj: file });
+                        reader.onload = () => resolve({ name: file.name, type: file.type, content: reader.result });
                         reader.onerror = reject;
 
                         if (file.type.startsWith('image/')) {
@@ -576,29 +384,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             'application/vnd.ms-excel', // .xls
                             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
                             'text/csv',
-                            'application/vnd.ms-works', // Common MIME for .wps, though often generic
-                            // Add other potential WPS MIME types if known, or rely on extension for backend.
-                            // For files not matching specific MIME types but ending with .wps, we can still try backend processing.
-                            (file.name.toLowerCase().endsWith('.wps') && !file.type) // If no specific MIME but ends with .wps
-                        ].includes(file.type) || file.name.toLowerCase().endsWith('.wps')) { // Also check extension directly
-                            reader.readAsDataURL(file); // Base64 for these document types, including WPS
+                            'application/vnd.ms-works'
+                        ].includes(file.type) || file.name.toLowerCase().endsWith('.wps')) {
+                            reader.readAsDataURL(file); // Base64 for document types
                         } else {
-                            console.warn(`Unsupported file type from browser: ${file.name} (${file.type}). Trying to read as Base64 for backend processing.`);
-                            // Fallback for unknown types, potentially including CSV if MIME type isn't 'text/csv'
-                            // The backend will have the final say on processing based on filename/content.
+                            console.warn(`Unsupported file type: ${file.name} (${file.type}). Trying Base64.`);
                             reader.readAsDataURL(file);
                         }
                     });
                 });
 
                 const processedFiles = await Promise.all(filePromises);
-                let textFileCombinedContent = "";
 
                 for (const pf of processedFiles) {
-                    if (pf.error) {
-                        appendMessage(`无法处理文件 ${pf.name}: ${pf.error}`, 'ai');
-                        continue;
-                    }
                     if (!pf.content) continue;
 
                     if (pf.type.startsWith('image/')) {
@@ -607,12 +405,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             mime_type: pf.type,
                             data: pf.content.split(',')[1] // Base64 data
                         });
-                        const imagePlaceholder = `[用户上传了图片: ${pf.name} - 将由后端OCR处理]`;
-                        if (userMessageContentParts.find(p => p.type === 'text')) {
-                            userMessageContentParts.find(p => p.type === 'text').text += `\\n${imagePlaceholder}`;
-                        } else {
-                            userMessageContentParts.unshift({ type: 'text', text: imagePlaceholder });
-                        }
                     } else if (pf.type === 'text/plain') {
                         textFileCombinedContent += `--- BEGIN FILE: ${pf.name} ---\n${pf.content}\n--- END FILE: ${pf.name} ---\n\n`;
                     } else { // PDF, DOCX, XLSX etc. as Base64
@@ -621,45 +413,48 @@ document.addEventListener('DOMContentLoaded', () => {
                             mime_type: pf.type,
                             data: pf.content.split(',')[1] // Remove "data:...;base64," prefix
                         });
-                        // Add a placeholder in the text message part
-                        const filePlaceholder = `[用户上传了文件: ${pf.name}]`;
-                        if (userMessageContentParts.find(p => p.type === 'text')) {
-                            userMessageContentParts.find(p => p.type === 'text').text += `\n${filePlaceholder}`;
-                        } else {
-                            userMessageContentParts.unshift({ type: 'text', text: filePlaceholder });
-                        }
-                    }
-                }
-                
-                if (textFileCombinedContent) {
-                    if (userMessageContentParts.find(p => p.type === 'text')){
-                        userMessageContentParts.find(p => p.type === 'text').text = textFileCombinedContent + userMessageContentParts.find(p => p.type === 'text').text;
-                    } else {
-                        userMessageContentParts.unshift({ type: 'text', text: textFileCombinedContent });
                     }
                 }
             }
-            
-            // Ensure there's at least one text part if other parts exist or if it was only files
-            if (userMessageContentParts.length > 0 && !userMessageContentParts.find(p=>p.type === 'text')){
-                 userMessageContentParts.unshift({ type: 'text', text: "[处理上传的文件]" });
-            } else if (userMessageContentParts.length === 0 && selectedFiles.length > 0){
-                 userMessageContentParts.push({ type: 'text', text: "[处理上传的文件]" });
+
+            // 构建当前用户消息内容
+            let currentUserMessageContent = "";
+            if (textFileCombinedContent) {
+                currentUserMessageContent += textFileCombinedContent;
+            }
+            if (userInput) {
+                currentUserMessageContent += userInput;
+            }
+            if (fileAttachmentsForRequestBody.length > 0) {
+                const fileList = fileAttachmentsForRequestBody.map(f => f.filename).join(', ');
+                currentUserMessageContent += `\n[附件文件: ${fileList}]`;
             }
             
-            // 将当前用户消息添加到对话历史
-            const currentUserMessage = { role: 'user', content: userMessageContentParts };
+            // 确保有内容
+            if (!currentUserMessageContent.trim()) {
+                currentUserMessageContent = "[处理上传的文件]";
+            }
+
+            // 将用户消息添加到对话历史
+            const currentUserMessage = { role: 'user', content: currentUserMessageContent.trim() };
             conversationHistory.push(currentUserMessage);
             
-            // 智能上下文管理：基于token数量而不是轮数
-            const MAX_CONTEXT_TOKENS = 120000; // 保留一些余量，不用满128K
-            conversationHistory = manageContextLength(conversationHistory, MAX_CONTEXT_TOKENS);
+            console.log('用户消息已添加到历史记录:', currentUserMessage);
+            console.log('发送给大模型的对话历史:', JSON.stringify(conversationHistory, null, 2));
+            
+            // 限制历史记录长度，避免超出上下文限制 (保留最近10轮对话)
+            const MAX_HISTORY_TURNS = 10;
+            if (conversationHistory.length > MAX_HISTORY_TURNS * 2) { // 每轮包含用户和AI消息
+                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+                console.log('历史记录已截断，当前长度:', conversationHistory.length);
+            }
             
             // 发送包含历史记录的完整消息
             await fetchLLMReply(activeModel, conversationHistory, fileAttachmentsForRequestBody, thinkingMessageId);
             
-            selectedFiles = []; // Clear files after sending
-            renderSelectedFiles(); // Update UI
+            // 清空已选文件
+            selectedFiles = [];
+            renderSelectedFiles();
 
         } catch (error) {
             removeThinking();
@@ -673,14 +468,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (model.type === 'openrouter') {
             return await callOpenRouter(model, messages, attachments, baseMessageId);
         } else if (model.type === 'ollama') {
-            // Ollama might not support complex message structures or attachments directly in this way.
-            // For simplicity, we'll just send the first text part if available.
-            const simpleTextInput = messages[0]?.content?.find(p => p.type === 'text')?.text || '';
-            return await callOllama(model, simpleTextInput);
+            // Ollama简化处理
+            const latestMessage = messages[messages.length - 1]?.content || '';
+            return await callOllama(model, latestMessage);
         } else if (model.type === 'telcom') {
-            // Similar to Ollama, Telcom might expect simpler input.
-            const simpleTextInput = messages[0]?.content?.find(p => p.type === 'text')?.text || '';
-            return await callTelcom(model, simpleTextInput);
+            // Telcom简化处理
+            const latestMessage = messages[messages.length - 1]?.content || '';
+            return await callTelcom(model, latestMessage);
         } else {
             throw new Error('暂不支持的模型类型: ' + model.type);
         }
@@ -701,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 max_tokens: 4000,
                 // stream: true is now set by the backend /api/relay
             };
-
+            
             if (attachments && attachments.length > 0) {
                 requestBody.attachments = attachments;
             }
@@ -731,43 +525,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Check if it's our specific file processing error from the backend
                     if (errorJson.errorType === 'fileProcessingError') {
                         appendMessage(errorJson.message || '一个或多个文件处理失败。', 'ai', baseMessageId);
-                    } else if (errorJson.errorType === 'textTooLongError') {
-                        // 文本过长错误的特殊处理，显示更清晰的提示
-                        const currentLength = errorJson.currentLength || 0;
-                        const maxLength = errorJson.maxLength || 163840;
-                        const overageKB = Math.round((currentLength - maxLength) / 1024);
-                        
-                        let errorMsg = `⚠️ 文本内容过长，无法处理\n\n`;
-                        errorMsg += `📊 **当前文本长度**: ${currentLength.toLocaleString()} 字符\n`;
-                        errorMsg += `📏 **最大支持长度**: ${maxLength.toLocaleString()} 字符\n`;
-                        errorMsg += `📈 **超出长度**: ${(currentLength - maxLength).toLocaleString()} 字符 (约 ${overageKB}KB)\n\n`;
-                        errorMsg += `💡 **解决建议**:\n`;
-                        errorMsg += `• 减少上传的文件数量\n`;
-                        errorMsg += `• 选择较小的文件\n`;
-                        errorMsg += `• 将大文件分段处理\n`;
-                        errorMsg += `• 删除不必要的文件内容`;
-                        
-                        appendMessage(errorMsg, 'ai', baseMessageId);
-                    } else if (errorJson.errorType === 'llmError') {
-                        // 大模型API错误
-                        let llmErrorMsg = `🤖 大模型API错误\n\n`;
-                        if (errorJson.error && errorJson.error.message) {
-                            llmErrorMsg += `**错误信息**: ${errorJson.error.message}\n`;
-                        } else if (errorJson.message) {
-                            llmErrorMsg += `**错误信息**: ${errorJson.message}\n`;
-                        }
-                        if (errorJson.error && errorJson.error.code) {
-                            llmErrorMsg += `**错误代码**: ${errorJson.error.code}\n`;
-                        }
-                        appendMessage(llmErrorMsg, 'ai', baseMessageId);
-                    } else if (errorJson.errorType === 'configError') {
-                        // 配置错误
-                        appendMessage(`⚙️ 配置错误: ${errorJson.message || '模型配置有误'}`, 'ai', baseMessageId);
                     } else { // Other backend errors (LLM, config, etc.)
-                        appendMessage(`❌ 系统错误: ${errorJson.message || errorJson.error || '未知错误'}`, 'ai', baseMessageId);
+                        appendMessage(`错误: ${errorJson.message || errorJson.error || errorText}`, 'ai', baseMessageId);
                     }
                 } catch (e) { // If errorText is not JSON
-                    appendMessage(`❌ 服务器错误: ${errorText}`, 'ai', baseMessageId);
+                    appendMessage(`错误: ${errorText}`, 'ai', baseMessageId);
                 }
                 return; 
             }
@@ -799,11 +561,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         // 将AI回复添加到对话历史
                         if (accumulatedResponse && accumulatedResponse.trim()) {
-                            conversationHistory.push({ 
+                            const aiMessage = { 
                                 role: 'assistant', 
                                 content: accumulatedResponse.trim() 
-                            });
+                            };
+                            conversationHistory.push(aiMessage);
+                            console.log('AI回复已添加到历史记录:', aiMessage);
+                            console.log('当前完整对话历史:', JSON.stringify(conversationHistory, null, 2));
                         }
+                        
                         return;
                     }
 
@@ -820,43 +586,33 @@ document.addEventListener('DOMContentLoaded', () => {
                                 
                                 // 将AI回复添加到对话历史
                                 if (accumulatedResponse && accumulatedResponse.trim()) {
-                                    conversationHistory.push({ 
+                                    const aiMessage = { 
                                         role: 'assistant', 
                                         content: accumulatedResponse.trim() 
-                                    });
+                                    };
+                                    conversationHistory.push(aiMessage);
+                                    console.log('AI回复已添加到历史记录:', aiMessage);
+                                    console.log('当前完整对话历史:', JSON.stringify(conversationHistory, null, 2));
                                 }
+                                
                                 return;
                             }
                             try {
                                 const parsed = JSON.parse(jsonStr);
                                 
-                                // 检查是否有错误响应
-                                if (parsed.error) {
-                                    clearInterval(ellipsisInterval);
-                                    let errorMsg = `🤖 大模型返回错误\n\n`;
-                                    if (parsed.error.message) {
-                                        errorMsg += `**错误信息**: ${parsed.error.message}\n`;
-                                    }
-                                    if (parsed.error.code) {
-                                        errorMsg += `**错误代码**: ${parsed.error.code}\n`;
-                                    }
-                                    if (parsed.error.type) {
-                                        errorMsg += `**错误类型**: ${parsed.error.type}\n`;
-                                    }
-                                    appendMessage(errorMsg, 'ai', baseMessageId);
-                                    return;
-                                }
-                                
-                                // 处理特殊的processed_user_message，更新对话历史中的用户消息
+                                // 处理包含文件内容的processed_user_message，更新历史记录
                                 if (parsed.type === 'processed_user_message') {
-                                    // 找到最后一条用户消息并替换为处理后的完整内容
-                                    for (let i = conversationHistory.length - 1; i >= 0; i--) {
-                                        if (conversationHistory[i].role === 'user') {
-                                            conversationHistory[i] = parsed.message;
-                                            break;
+                                    // 只有当消息包含文件内容时才更新历史记录
+                                    if (parsed.message.content.includes('--- Content from file:')) {
+                                        // 找到最后一条用户消息并替换为包含文件内容的完整版本
+                                        for (let i = conversationHistory.length - 1; i >= 0; i--) {
+                                            if (conversationHistory[i].role === 'user') {
+                                                conversationHistory[i] = parsed.message;
+                                                break;
+                                            }
                                         }
+                                        console.log('已更新对话历史中的用户消息，包含文件内容');
                                     }
-                                    console.log('已更新对话历史中的用户消息，包含完整文件内容');
                                     continue; // 跳过这个特殊消息的其他处理
                                 }
                                 
@@ -865,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     hasNewContent = true; 
                                 }
                             } catch (e) {
-                                console.warn('Error parsing stream JSON:', jsonStr, e);
+                                // console.warn('Error parsing stream JSON:', jsonStr, e);
                             }
                         }
                     }

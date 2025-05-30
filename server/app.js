@@ -117,53 +117,32 @@ app.post('/api/relay', async (req, res) => {
     const apiKey = activeModel.apikey;
 
     try {
-        let userQuery = '';
-        let combinedFileTexts = '';
-        let criticalFileErrorOccurred = false;
-        const fileProcessingErrorMessages = [];
+        // 获取对话历史
+        let messagesForLLM = req.body.messages || [];
         
-        const isErrorMessageString = (text) => typeof text === 'string' && (text.startsWith('[文件处理错误') || text.startsWith('[文件处理提示'));
-
-        const userMessages = req.body.messages;
-        if (userMessages && userMessages.length > 0 && userMessages[0].content) {
-            if (Array.isArray(userMessages[0].content)) {
-                 const textPart = userMessages[0].content.find(part => part.type === 'text');
-                 if (textPart) {
-                     userQuery = textPart.text || '';
-                 }
-            } else if (typeof userMessages[0].content === 'string') {
-                 userQuery = userMessages[0].content;
-            }
-        }
+        console.log('服务器接收到的对话历史:', JSON.stringify(messagesForLLM, null, 2));
         
+        // 处理附件文件（如果有）
         if (req.body.attachments && Array.isArray(req.body.attachments)) {
+            console.log('处理附件文件数量:', req.body.attachments.length);
+            
+            let fileProcessingResults = [];
+            
             for (const attachment of req.body.attachments) {
                 if (!attachment.data || !attachment.filename) {
-                    console.warn('Skipping invalid attachment (missing data or filename):', attachment);
-                    fileProcessingErrorMessages.push(`[文件处理提示：检测到无效的附件数据 (文件名: ${attachment.filename || '未知'})，已跳过处理。]`);
-                    criticalFileErrorOccurred = true; // Treat as an error to report
+                    console.warn('跳过无效附件:', attachment.filename);
                     continue;
                 }
                 
                 const buffer = Buffer.from(attachment.data, 'base64');
-                let extractedText = ''; // Holds content OR error message for THIS file
+                let extractedText = '';
                 let fileTypeForLog = 'Unknown';
 
                 try {
-                    console.log(`Processing attachment: Original Filename: '${attachment.filename}', Original MimeType: '${attachment.mime_type}'`);
+                    console.log(`Processing attachment: ${attachment.filename}, MimeType: ${attachment.mime_type}`);
                     const mimeType = attachment.mime_type ? attachment.mime_type.trim() : '';
                     const fileName = attachment.filename ? attachment.filename.trim().toLowerCase() : '';
-                    console.log(`Sanitized values - fileName: '${fileName}', mimeType: '${mimeType}'`);
-
-                    // Detailed DOC/DOCX Check
-                    console.log(`DOC/DOCX Check part 1 (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'): ${mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}`);
-                    console.log(`DOC/DOCX Check part 2 (fileName.endsWith('.docx')): ${fileName.endsWith('.docx')}`);
-                    console.log(`DOC/DOCX Check part 3 (mimeType === 'application/msword'): ${mimeType === 'application/msword'}`);
-                    console.log(`DOC/DOCX Check part 4 (fileName.endsWith('.doc')): ${fileName.endsWith('.doc')}`);
-
-                    console.log(`CSV Check part 1 (mimeType === 'text/csv'): ${mimeType === 'text/csv'}`);
-                    console.log(`CSV Check part 2 (fileName.endsWith('.csv')): ${fileName.endsWith('.csv')}`);
-
+                    
                     if (mimeType === 'application/pdf' || fileName.endsWith('.pdf')) {
                         fileTypeForLog = 'PDF';
                         const pdfData = await pdf(buffer);
@@ -226,7 +205,7 @@ app.post('/api/relay', async (req, res) => {
                             const outputTxtFileName = path.basename(tempInputFilePath, path.extname(tempInputFilePath)) + '.txt';
                             tempOutputTxtFilePath = path.join(tempOutputDir, outputTxtFileName);
                             extractedText = await new Promise((resolve, reject) => {
-                                const command = 'soffice'; // or 'libreoffice' depending on system
+                                const command = 'soffice';
                                 const args = [
                                     '--headless',
                                     '--convert-to',
@@ -236,11 +215,11 @@ app.post('/api/relay', async (req, res) => {
                                     tempInputFilePath
                                 ];
                                 
-                                console.log(`Executing: ${command} ${args.join(' ')}`); // Log command execution
+                                console.log(`Executing: ${command} ${args.join(' ')}`);
 
                                 const libreoffice = spawn(command, args);
                                 let errorOutput = '';
-                                let stdOutput = ''; // Capture stdout for potential info/debug messages from soffice
+                                let stdOutput = '';
 
                                 libreoffice.stdout.on('data', (data) => {
                                     stdOutput += data.toString();
@@ -298,7 +277,7 @@ app.post('/api/relay', async (req, res) => {
                         try {
                             // 创建OCR worker
                             worker = await Tesseract.createWorker({
-                                logger: m => console.log('[Tesseract]', m) // 添加日志
+                                logger: m => console.log('[Tesseract]', m)
                             });
                             
                             // 加载中文简体和英文语言包
@@ -307,9 +286,9 @@ app.post('/api/relay', async (req, res) => {
                             
                             // 设置OCR参数以提高中文识别准确率
                             await worker.setParameters({
-                                'preserve_interword_spaces': '1', // 保持词间空格
-                                'tessedit_pageseg_mode': '1', // 使用自动页面分割
-                                'tessedit_ocr_engine_mode': '1', // 使用神经网络引擎
+                                'preserve_interword_spaces': '1',
+                                'tessedit_pageseg_mode': '1',
+                                'tessedit_ocr_engine_mode': '1',
                             });
                             
                             console.log(`Starting OCR for image: ${attachment.filename}`);
@@ -322,8 +301,8 @@ app.post('/api/relay', async (req, res) => {
                             if (ocrText && ocrText.trim().length > 0) {
                                 // 清理OCR结果，移除多余的空白字符
                                 extractedText = ocrText
-                                    .replace(/\n{3,}/g, '\n\n') // 替换多个换行为双换行
-                                    .replace(/\s{2,}/g, ' ') // 替换多个空格为单空格
+                                    .replace(/\n{3,}/g, '\n\n')
+                                    .replace(/\s{2,}/g, ' ')
                                     .trim();
                                 
                                 // 如果置信度太低，添加提示
@@ -363,71 +342,32 @@ app.post('/api/relay', async (req, res) => {
                         console.log(`Unsupported attachment type: ${mimeType} for file ${fileName}`);
                         extractedText = `[文件处理提示：文件 '${attachment.filename}' 类型 (${mimeType || '未知'}) 不被支持或无法识别。]`;
                     }
-                } catch (fileProcessingError) { // Catch-all for unexpected errors within a single file's processing block
-                    console.error(`Unexpected error processing file ${attachment.filename} (${fileTypeForLog}):`, fileProcessingError);
-                    extractedText = `[文件处理错误：处理文件 '${attachment.filename}' (${fileTypeForLog}) 时发生意外。详情: ${fileProcessingError.message}]`;
-                }
-
-                // After attempting to process the file and populate extractedText (with content or error message)
-                if (isErrorMessageString(extractedText)) {
-                    criticalFileErrorOccurred = true;
-                    fileProcessingErrorMessages.push(extractedText);
-                } else if (extractedText && extractedText.trim().length > 0) { // Ensure non-empty actual content
-                    combinedFileTexts += `--- Content from file: ${attachment.filename} (${fileTypeForLog}) ---\n${extractedText}\n--- End of file: ${attachment.filename} ---\n\n`;
-                } else {
-                    // File might be of a supported type but empty, or an error occurred that didn't set extractedText to an error string.
-                    // To be safe, if extractedText is empty or only whitespace and not an error, consider it a silent failure or empty file.
-                    // We could add a generic note if it's not an error but still empty, or just skip it.
-                    // For now, only non-empty, non-error text is added to combinedFileTexts.
-                    // If it was a parsing error, it should have set extractedText to an error string and been caught above.
-                    if (!isErrorMessageString(extractedText)) { // If it's not an error, but empty/whitespace
-                        console.log(`File '${attachment.filename}' (${fileTypeForLog}) yielded no content or only whitespace.`);
-                        // Optionally add a note for empty files if desired, but not to error messages.
-                        // fileProcessingErrorMessages.push(`[文件处理提示：文件 '${attachment.filename}' (${fileTypeForLog}) 内容为空或无法提取有效文本。]`);
-                        // criticalFileErrorOccurred = true; // Decide if empty file is a "critical" error to stop LLM
+                    
+                    if (extractedText && extractedText.trim()) {
+                        fileProcessingResults.push(`--- Content from file: ${attachment.filename} (${fileTypeForLog}) ---\n${extractedText.trim()}\n--- End of file: ${attachment.filename} ---`);
                     }
+                    
+                } catch (fileError) {
+                    console.error(`处理文件 ${attachment.filename} 出错:`, fileError);
+                    fileProcessingResults.push(`[文件 ${attachment.filename} 处理失败: ${fileError.message}]`);
+                }
+            }
+            
+            // 如果有文件处理结果，将其添加到最后一条用户消息中
+            if (fileProcessingResults.length > 0 && messagesForLLM.length > 0) {
+                const lastMessage = messagesForLLM[messagesForLLM.length - 1];
+                if (lastMessage.role === 'user') {
+                    const fileContent = fileProcessingResults.join('\n\n');
+                    lastMessage.content = fileContent + '\n\n' + lastMessage.content;
+                    console.log('已将文件内容添加到用户消息中');
                 }
             }
         }
-
-        if (criticalFileErrorOccurred) {
-            const combinedErrorString = fileProcessingErrorMessages.join('\n');
-            console.log("File processing errors occurred. Returning 400 to client:", combinedErrorString);
-            return res.status(400).json({ 
-                errorType: 'fileProcessingError', 
-                message: combinedErrorString || "一个或多个文件处理失败。"
-            });
-        }
         
-        // If we reach here, no critical file errors occurred (or no files were attached)
-        // Proceed to prepare message for LLM
-
-        let finalUserContentForLLM = userQuery;
-        if (combinedFileTexts.trim().length > 0) { // Only add file texts if there are any
-            finalUserContentForLLM = combinedFileTexts.trim() + "\n\nUser Query:\n" + userQuery;
-        }
-        
-        if (!finalUserContentForLLM.trim() && (!req.body.attachments || req.body.attachments.length === 0)) {
-            // If there's no user text and no files were processed successfully (or no files to begin with)
-            // This check might be redundant if the frontend already prevents sending empty messages.
-             return res.status(400).json({ errorType: 'emptyMessageError', message: '不能发送空消息或仅包含无法处理的文件。' });
+        if (messagesForLLM.length === 0) {
+            return res.status(400).json({ errorType: 'emptyMessageError', message: '不能发送空消息。' });
         }
 
-        // 检查文本长度是否超过大模型上下文限制 (128K tokens ≈ 163840 字符)
-        const MAX_CONTEXT_LENGTH = 163840;
-        if (finalUserContentForLLM.length > MAX_CONTEXT_LENGTH) {
-            console.log(`Text too long: ${finalUserContentForLLM.length} characters (max: ${MAX_CONTEXT_LENGTH})`);
-            return res.status(400).json({ 
-                errorType: 'textTooLongError', 
-                message: `文本内容过长 (${finalUserContentForLLM.length} 字符)，超出大模型处理限制 (${MAX_CONTEXT_LENGTH} 字符)。请减少文件数量或文件大小后重试。`,
-                currentLength: finalUserContentForLLM.length,
-                maxLength: MAX_CONTEXT_LENGTH
-            });
-        }
-
-        console.log(`Sending to LLM: ${finalUserContentForLLM.length} characters`);
-        
-        const messagesForLLM = [{ role: 'user', content: finalUserContentForLLM }];
         const requestBodyForLLM = { ...req.body, messages: messagesForLLM, stream: true };
         delete requestBodyForLLM.attachments;
 
@@ -441,12 +381,9 @@ app.post('/api/relay', async (req, res) => {
             body: JSON.stringify(requestBodyForLLM)
         });
 
-        console.log(`LLM API Response Status: ${llmResponse.status} ${llmResponse.statusText}`);
-
         if (!llmResponse.ok) {
             const errorText = await llmResponse.text();
             console.error('LLM API Error:', llmResponse.status, errorText);
-            // Check if response is JSON, otherwise send plain text
             try {
                 const errorJson = JSON.parse(errorText);
                 return res.status(llmResponse.status).json({ errorType: 'llmError', ...errorJson });
@@ -459,19 +396,9 @@ app.post('/api/relay', async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // 首先发送处理后的完整用户消息，供前端更新对话历史
-        const processedUserMessage = { 
-            role: 'user', 
-            content: finalUserContentForLLM 
-        };
-        res.write(`data: ${JSON.stringify({ 
-            type: 'processed_user_message', 
-            message: processedUserMessage 
-        })}\n\n`);
-
-        llmResponse.body.pipe(res); // Simplifies piping the stream
+        llmResponse.body.pipe(res);
         
-        llmResponse.body.on('error', (err) => { // Added error handling for the source stream
+        llmResponse.body.on('error', (err) => {
             console.error('Error in LLM response stream:', err);
             if (!res.headersSent) {
                  res.status(500).json({ errorType: 'streamError', message: 'LLM 响应流错误' });
@@ -480,8 +407,8 @@ app.post('/api/relay', async (req, res) => {
             }
         });
 
-    } catch (err) { // Catch-all for the entire /api/relay block
-        console.error('Relay error in /api/relay (outer try-catch):', err);
+    } catch (err) {
+        console.error('Relay error in /api/relay:', err);
         if (!res.headersSent) {
              res.status(500).json({ errorType: 'relayGenericError', message: '服务器中继处理错误: ' + err.message });
         } else {
